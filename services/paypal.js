@@ -1,82 +1,80 @@
-const axios = require('axios')
+const axios = require('axios');
 
 async function generateAccessToken() {
     const response = await axios({
-        url: process.env.PAYPAL_BASE_URL + '/v1/oauth2/token',
+        url: `${process.env.PAYPAL_BASE_URL}/v1/oauth2/token`,
         method: 'post',
         data: 'grant_type=client_credentials',
         auth: {
             username: process.env.PAYPAL_CLIENT_ID,
             password: process.env.PAYPAL_SECRET
         }
-    })
+    });
 
-    return response.data.access_token
+    return response.data.access_token;
 }
 
-exports.createOrder = async () => {
-    const accessToken = await generateAccessToken()
+async function createOrder({ amount, currency = 'USD', items = [], description = '', returnUrl, cancelUrl }) {
+    const accessToken = await generateAccessToken();
+
+    const itemTotal = items.reduce((sum, item) => sum + parseFloat(item.unit_amount.value) * item.quantity, 0).toFixed(2);
 
     const response = await axios({
-        url: process.env.PAYPAL_BASE_URL + '/v2/checkout/orders',
+        url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders`,
         method: 'post',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + accessToken
+            'Authorization': `Bearer ${accessToken}`
         },
-        data: JSON.stringify({
+        data: {
             intent: 'CAPTURE',
             purchase_units: [
                 {
-                    items: [
-                        {
-                            name: 'Node.js Complete Course',
-                            description: 'Node.js Complete Course with Express and MongoDB',
-                            quantity: 1,
-                            unit_amount: {
-                                currency_code: 'USD',
-                                value: '100.00'
-                            }
-                        }
-                    ],
-
+                    description,
+                    items,
                     amount: {
-                        currency_code: 'USD',
-                        value: '100.00',
+                        currency_code: currency,
+                        value: itemTotal,
                         breakdown: {
                             item_total: {
-                                currency_code: 'USD',
-                                value: '100.00'
+                                currency_code: currency,
+                                value: itemTotal
                             }
                         }
                     }
                 }
             ],
-
             application_context: {
-                return_url: process.env.BASE_URL + '/complete-order',
-                cancel_url: process.env.BASE_URL + '/cancel-order',
+                return_url: returnUrl || `${process.env.BASE_URL}/complete-order`,
+                cancel_url: cancelUrl || `${process.env.BASE_URL}/cancel-order`,
                 shipping_preference: 'NO_SHIPPING',
                 user_action: 'PAY_NOW',
-                brand_name: 'manfra.io'
+                brand_name: 'YourBrandName'
             }
-        })
-    })
+        }
+    });
 
-    return response.data.links.find(link => link.rel === 'approve').href
+    const approveLink = response.data.links.find(link => link.rel === 'approve');
+    return approveLink.href;
 }
 
-exports.capturePayment = async (orderId) => {
-    const accessToken = await generateAccessToken()
+async function capturePayment(orderId) {
+    const accessToken = await generateAccessToken();
 
     const response = await axios({
-        url: process.env.PAYPAL_BASE_URL + `/v2/checkout/orders/${orderId}/capture`,
+        url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`,
         method: 'post',
         headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + accessToken
+            'Authorization': `Bearer ${accessToken}`
         }
-    })
+    });
 
-    return response.data
+    return response.data;
 }
+
+module.exports = {
+    generateAccessToken,
+    createOrder,
+    capturePayment
+};
