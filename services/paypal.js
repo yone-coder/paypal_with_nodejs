@@ -77,10 +77,10 @@ async function createOrder(options = {}) {
                 shipping_preference: 'NO_SHIPPING',
                 user_action: 'PAY_NOW',
                 brand_name: 'Money Transfer Service',
-                landing_page: 'BILLING',      // Add this to skip login
+                landing_page: 'LOGIN', // Changed from BILLING to LOGIN for the main PayPal page with all options
                 payment_method: {
-                    payee_preferred: 'IMMEDIATE_PAYMENT_REQUIRED',
-                    payer_selected: 'PAYPAL'
+                    payee_preferred: 'UNRESTRICTED' // Changed from IMMEDIATE_PAYMENT_REQUIRED to allow guest checkout
+                    // Removed payer_selected: 'PAYPAL' to allow all payment methods
                 }
             }
         }
