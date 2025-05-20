@@ -76,7 +76,12 @@ async function createOrder(options = {}) {
                 cancel_url: cancelUrl,
                 shipping_preference: 'NO_SHIPPING',
                 user_action: 'PAY_NOW',
-                brand_name: 'Money Transfer Service'
+                brand_name: 'Money Transfer Service',
+                landing_page: 'BILLING',      // Add this to skip login
+                payment_method: {
+                    payee_preferred: 'IMMEDIATE_PAYMENT_REQUIRED',
+                    payer_selected: 'PAYPAL'
+                }
             }
         }
     });
