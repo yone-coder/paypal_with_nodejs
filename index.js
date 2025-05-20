@@ -1,8 +1,21 @@
 require('dotenv').config()
 const express = require('express')
+const cors = require('cors') // You'll need to install this: npm install cors
+const bodyParser = require('body-parser')
 const paypal = require('./services/paypal')
 
 const app = express()
+
+// Enable CORS for your frontend domain
+app.use(cors({
+  origin: '*', // For development, allow all origins. In production, specify your frontend domain
+  methods: ['GET', 'POST'],
+  credentials: true
+}))
+
+// Parse JSON requests
+app.use(bodyParser.json())
+app.use(bodyParser.urlencoded({ extended: true }))
 
 app.set('view engine', 'ejs')
 
@@ -12,26 +25,145 @@ app.get('/', (req, res) => {
 
 app.post('/pay', async(req, res) => {
     try {
-        const url = await paypal.createOrder()
+        // Get payment details from request body
+        const { amount = '10.00', description = 'International Money Transfer', items = [] } = req.body
+        
+        // Create PayPal order with the provided details
+        const url = await paypal.createOrder({
+            amount: amount.toString(),
+            description,
+            items: items.length ? items : undefined
+        })
 
+        // Return the URL directly for API requests
+        if (req.headers['content-type'] === 'application/json') {
+            return res.json({ url })
+        }
+        
+        // Otherwise redirect for browser requests
         res.redirect(url)
     } catch (error) {
-        res.send('Error: ' + error)
+        console.error('PayPal create order error:', error)
+        
+        // Return error as JSON for API requests
+        if (req.headers['content-type'] === 'application/json') {
+            return res.status(500).json({ error: error.message || 'Failed to create PayPal order' })
+        }
+        
+        res.status(500).send('Error: ' + error.message)
     }
 })
 
 app.get('/complete-order', async (req, res) => {
     try {
-        await paypal.capturePayment(req.query.token)
-
-        res.send('Course purchased successfully')
+        const result = await paypal.capturePayment(req.query.token)
+        
+        // Check if the payment was successfully captured
+        if (result.status === 'COMPLETED') {
+            // For API clients that might be checking the status
+            if (req.headers.accept === 'application/json') {
+                return res.json({ 
+                    success: true, 
+                    message: 'Payment completed successfully',
+                    transaction: result
+                })
+            }
+            
+            // Render success page for browser clients
+            res.send(`
+                <html>
+                <head>
+                    <title>Payment Successful</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                        .success { color: green; }
+                        .container { max-width: 600px; margin: 0 auto; }
+                        .btn { display: inline-block; background: #007bff; color: white; padding: 10px 20px; 
+                               text-decoration: none; border-radius: 5px; margin-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="container">
+                        <h1 class="success">Payment Successful!</h1>
+                        <p>Your transfer has been processed successfully.</p>
+                        <p>Transaction ID: ${result.id}</p>
+                        <a href="/" class="btn">Return to Home</a>
+                    </div>
+                </body>
+                </html>
+            `)
+        } else {
+            throw new Error('Payment not completed')
+        }
     } catch (error) {
-        res.send('Error: ' + error)
+        console.error('PayPal capture payment error:', error)
+        
+        // Return error as JSON for API requests
+        if (req.headers.accept === 'application/json') {
+            return res.status(500).json({ error: error.message || 'Failed to capture payment' })
+        }
+        
+        res.status(500).send(`
+            <html>
+            <head>
+                <title>Payment Failed</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                    .error { color: red; }
+                    .container { max-width: 600px; margin: 0 auto; }
+                    .btn { display: inline-block; background: #007bff; color: white; padding: 10px 20px; 
+                           text-decoration: none; border-radius: 5px; margin-top: 20px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1 class="error">Payment Failed</h1>
+                    <p>There was an error processing your payment: ${error.message}</p>
+                    <a href="/" class="btn">Try Again</a>
+                </div>
+            </body>
+            </html>
+        `)
     }
 })
 
 app.get('/cancel-order', (req, res) => {
-    res.redirect('/')
+    // For API clients
+    if (req.headers.accept === 'application/json') {
+        return res.json({ 
+            success: false, 
+            message: 'Payment was canceled by the user'
+        })
+    }
+    
+    // Render cancellation page for browser clients
+    res.send(`
+        <html>
+        <head>
+            <title>Payment Cancelled</title>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                .cancelled { color: #dc3545; }
+                .container { max-width: 600px; margin: 0 auto; }
+                .btn { display: inline-block; background: #007bff; color: white; padding: 10px 20px; 
+                       text-decoration: none; border-radius: 5px; margin-top: 20px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1 class="cancelled">Payment Cancelled</h1>
+                <p>You have cancelled your payment. No charges were made.</p>
+                <a href="/" class="btn">Return to Home</a>
+            </div>
+        </body>
+        </html>
+    `)
 })
 
-app.listen(3000, () => console.log('Server started on port 3000'))
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok' })
+})
+
+const PORT = process.env.PORT || 3000
+app.listen(PORT, () => console.log(`Server started on port ${PORT}`))
