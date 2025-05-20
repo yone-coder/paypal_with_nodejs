@@ -7,9 +7,9 @@ const path = require('path');
 
 const app = express();
 
-// Enable CORS for your frontend domain
+// Enable CORS for all origins
 app.use(cors({
-  origin: '*', // For development, allow all origins. In production, specify your frontend domain
+  origin: '*',
   methods: ['GET', 'POST'],
   credentials: true
 }));
@@ -35,27 +35,20 @@ app.get('/pay', async(req, res) => {
     try {
         // Get amount from query parameter
         const amount = req.query.amount || '10.00';
-        const description = req.query.description || 'International Money Transfer';
+        const description = req.query.description || 'Payment';
 
         // Create PayPal order with the provided amount
-        const url = await paypal.createOrder({
+        const { approvalUrl, orderID } = await paypal.createOrder({
             amount: amount.toString(),
             description,
-            items: [{
-                name: 'Money Transfer Service',
-                description: 'International money transfer',
-                quantity: 1,
-                unit_amount: {
-                    currency_code: 'USD',
-                    value: amount.toString()
-                }
-            }]
+            userAction: 'PAY_NOW', // Force immediate payment without login
+            noShipping: true // Disable shipping address requirement
         });
 
-        // Redirect to PayPal
-        res.redirect(url);
+        // Redirect to PayPal checkout
+        res.redirect(approvalUrl);
     } catch (error) {
-        console.error('PayPal create order error:', error);
+        console.error('Payment creation error:', error);
         res.status(500).send('Error: ' + error.message);
     }
 });
@@ -63,23 +56,21 @@ app.get('/pay', async(req, res) => {
 // POST endpoint for API requests
 app.post('/pay', async(req, res) => {
     try {
-        // Get payment details from request body
-        const { amount = '10.00', description = 'International Money Transfer', items = [] } = req.body;
+        const { amount = '10.00', description = 'Payment' } = req.body;
 
         // Create PayPal order with the provided details
-        const url = await paypal.createOrder({
+        const { approvalUrl, orderID } = await paypal.createOrder({
             amount: amount.toString(),
             description,
-            items: items.length ? items : undefined
+            userAction: 'PAY_NOW', // Force immediate payment
+            noShipping: true // Disable shipping address requirement
         });
 
         // Return the URL directly for API requests
-        return res.json({ url });
+        return res.json({ url: approvalUrl, orderID });
     } catch (error) {
-        console.error('PayPal create order error:', error);
-
-        // Return error as JSON for API requests
-        return res.status(500).json({ error: error.message || 'Failed to create PayPal order' });
+        console.error('Payment creation error:', error);
+        return res.status(500).json({ error: error.message || 'Failed to create payment' });
     }
 });
 
@@ -89,7 +80,7 @@ app.get('/complete-order', async (req, res) => {
 
         // Check if the payment was successfully captured
         if (result.status === 'COMPLETED') {
-            // For API clients that might be checking the status
+            // For API clients
             if (req.headers.accept === 'application/json') {
                 return res.json({ 
                     success: true, 
@@ -114,7 +105,7 @@ app.get('/complete-order', async (req, res) => {
                 <body>
                     <div class="container">
                         <h1 class="success">Payment Successful!</h1>
-                        <p>Your transfer has been processed successfully.</p>
+                        <p>Your payment has been processed successfully.</p>
                         <p>Transaction ID: ${result.id}</p>
                         <a href="/" class="btn">Return to Home</a>
                     </div>
@@ -125,7 +116,7 @@ app.get('/complete-order', async (req, res) => {
             throw new Error('Payment not completed');
         }
     } catch (error) {
-        console.error('PayPal capture payment error:', error);
+        console.error('Payment capture error:', error);
 
         // Return error as JSON for API requests
         if (req.headers.accept === 'application/json') {
@@ -205,17 +196,17 @@ app.post('/process-card', async (req, res) => {
         }
 
         // Process the card payment
-        const order = await paypal.createCardOrder({
+        const result = await paypal.createCardOrder({
             amount: amount.toString(),
-            description: description || 'International Money Transfer',
+            description: description || 'Payment',
             cardDetails
         });
 
-        // If successful, redirect to success page or return success response
+        // Return success response
         res.json({
             success: true,
             message: 'Payment processed successfully',
-            redirectUrl: `/payment-success?id=${order.id}`
+            transaction: result
         });
 
     } catch (error) {
@@ -227,34 +218,6 @@ app.post('/process-card', async (req, res) => {
     }
 });
 
-// Success page for card payments
-app.get('/payment-success', (req, res) => {
-    const transactionId = req.query.id || 'N/A';
-
-    res.send(`
-        <html>
-        <head>
-            <title>Payment Successful</title>
-            <style>
-                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-                .success { color: green; }
-                .container { max-width: 600px; margin: 0 auto; }
-                .btn { display: inline-block; background: #007bff; color: white; padding: 10px 20px; 
-                       text-decoration: none; border-radius: 5px; margin-top: 20px; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1 class="success">Payment Successful!</h1>
-                <p>Your transfer has been processed successfully.</p>
-                <p>Transaction ID: ${transactionId}</p>
-                <a href="/" class="btn">Return to Home</a>
-            </div>
-        </body>
-        </html>
-    `);
-});
-
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });
@@ -262,3 +225,4 @@ app.get('/health', (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+
