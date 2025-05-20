@@ -4,17 +4,22 @@ const axios = require('axios');
  * Generate an access token using PayPal client credentials
  */
 async function generateAccessToken() {
-    const response = await axios({
-        url: `${process.env.PAYPAL_BASE_URL}/v1/oauth2/token`,
-        method: 'post',
-        data: 'grant_type=client_credentials',
-        auth: {
-            username: process.env.PAYPAL_CLIENT_ID,
-            password: process.env.PAYPAL_SECRET
-        }
-    });
+    try {
+        const response = await axios({
+            url: `${process.env.PAYPAL_BASE_URL}/v1/oauth2/token`,
+            method: 'post',
+            data: 'grant_type=client_credentials',
+            auth: {
+                username: process.env.PAYPAL_CLIENT_ID,
+                password: process.env.PAYPAL_SECRET
+            }
+        });
 
-    return response.data.access_token;
+        return response.data.access_token;
+    } catch (error) {
+        console.error('Error generating PayPal access token:', error.response?.data || error.message);
+        throw new Error('Failed to authenticate with PayPal');
+    }
 }
 
 /**
@@ -56,6 +61,33 @@ async function createOrder(options = {}) {
     // Add items if provided
     if (items && items.length > 0) {
         orderData.purchase_units[0].items = items;
+        
+        // Add item_total if items are provided
+        const itemTotal = items.reduce((total, item) => {
+            return total + (parseFloat(item.unit_amount.value) * item.quantity);
+        }, 0).toFixed(2);
+        
+        // Make sure items total matches the amount
+        if (itemTotal !== amount) {
+            orderData.purchase_units[0].amount.breakdown = {
+                item_total: {
+                    currency_code: currency,
+                    value: itemTotal
+                },
+                // If there's a discrepancy, add a handling fee to make up the difference
+                handling: {
+                    currency_code: currency,
+                    value: (parseFloat(amount) - parseFloat(itemTotal)).toFixed(2)
+                }
+            };
+        } else {
+            orderData.purchase_units[0].amount.breakdown = {
+                item_total: {
+                    currency_code: currency,
+                    value: itemTotal
+                }
+            };
+        }
     }
 
     try {
@@ -123,9 +155,11 @@ async function createCardOrder(options = {}) {
     // Parse expiry date MM/YY format
     const [expMonth, expYear] = cardDetails.expiry ? cardDetails.expiry.split('/') : ['', ''];
     
+    // Pad month with leading zero if needed
+    const paddedMonth = expMonth.padStart(2, '0');
+
     try {
         // Create an order with payment_source directly
-        // This follows PayPal's recommended approach for advanced card processing
         const orderResponse = await axios({
             url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders`,
             method: 'post',
@@ -148,7 +182,7 @@ async function createCardOrder(options = {}) {
                 payment_source: {
                     card: {
                         number: cardDetails.number,
-                        expiry: `20${expYear}-${expMonth}`,
+                        expiry: `20${expYear}-${paddedMonth}`,
                         security_code: cardDetails.cvc,
                         name: cardDetails.name || 'Card Holder',
                         billing_address: {
