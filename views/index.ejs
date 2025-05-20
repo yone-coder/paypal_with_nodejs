@@ -3,13 +3,275 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PayPal with Node.js</title>
+    <title>Money Transfer Service</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background-color: #0070ba;
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+        .transfer-form {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-top: 2rem;
+        }
+        h1, h2 {
+            color: #2c3e50;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+        label {
+            font-weight: 600;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .btn {
+            display: inline-block;
+            background: #0070ba;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        .payment-methods {
+            margin-top: 20px;
+        }
+        #paypal-button-container {
+            margin-top: 20px;
+        }
+        .payment-options {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 20px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Node.js Complete Course</h1>
-    <h2>Price: $100.00</h2>
-    <form action="/pay" method="post">
-        <input type="submit" value="Buy">
-    </form>
+    <header>
+        <h1>Money Transfer Service</h1>
+    </header>
+    
+    <div class="container">
+        <div class="transfer-form">
+            <h2>Send Money Internationally</h2>
+            
+            <div>
+                <label for="amount">Amount (USD):</label>
+                <input type="number" id="amount" step="0.01" min="5" value="10.00" required>
+                
+                <label for="recipient">Recipient:</label>
+                <input type="text" id="recipient" placeholder="Recipient's name">
+                
+                <label for="country">Destination Country:</label>
+                <select id="country">
+                    <option value="HT" selected>Haiti</option>
+                    <option value="DR">Dominican Republic</option>
+                    <option value="JM">Jamaica</option>
+                    <option value="MX">Mexico</option>
+                    <option value="CO">Colombia</option>
+                </select>
+                
+                <div class="payment-methods">
+                    <h3>Payment Methods</h3>
+                    <p>Select your preferred payment method:</p>
+                    
+                    <!-- PayPal Smart Buttons will be rendered here -->
+                    <div id="paypal-button-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PayPal JavaScript SDK -->
+    <script src="https://www.paypal.com/sdk/js?client-id=YOUR_CLIENT_ID_PLACEHOLDER&currency=USD&components=buttons,funding-eligibility"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize PayPal Smart Buttons
+            initPayPalButtons();
+            
+            // Update amount handler
+            document.getElementById('amount').addEventListener('change', function() {
+                // Re-render buttons when amount changes
+                document.getElementById('paypal-button-container').innerHTML = '';
+                initPayPalButtons();
+            });
+        });
+        
+        function initPayPalButtons() {
+            const amount = document.getElementById('amount').value;
+            const recipient = document.getElementById('recipient').value || 'Recipient';
+            const country = document.getElementById('country').value;
+            
+            paypal.Buttons({
+                // Enable all eligible funding sources
+                fundingSource: paypal.FUNDING.PAYPAL,
+                
+                // Smart Buttons configuration
+                style: {
+                    layout: 'vertical',  // show all available payment options
+                    color: 'blue',
+                    shape: 'rect',
+                    label: 'pay'
+                },
+                
+                // Create order on the server
+                createOrder: function() {
+                    return fetch('/pay', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            amount: amount,
+                            description: `Money transfer to ${recipient} in ${getCountryName(country)}`,
+                            items: [{
+                                name: 'Money Transfer Service',
+                                description: `Transfer to ${recipient} in ${getCountryName(country)}`,
+                                quantity: 1,
+                                unit_amount: {
+                                    currency_code: 'USD',
+                                    value: amount
+                                }
+                            }]
+                        })
+                    })
+                    .then(function(response) {
+                        return response.json();
+                    })
+                    .then(function(data) {
+                        // Extract and return the order ID from the server response
+                        const orderUrl = new URL(data.url);
+                        const token = orderUrl.searchParams.get('token');
+                        return token;
+                    });
+                },
+                
+                // Order approved
+                onApprove: function(data) {
+                    return fetch(`/complete-order?token=${data.orderID}`, {
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    })
+                    .then(function(response) {
+                        return response.json();
+                    })
+                    .then(function(details) {
+                        if (details.success) {
+                            alert('Transaction completed! Your transfer is being processed.');
+                            window.location.href = '/';
+                        } else {
+                            throw new Error('Transaction could not be completed.');
+                        }
+                    });
+                },
+                
+                // Error handler
+                onError: function(err) {
+                    console.error('PayPal error:', err);
+                    alert('There was an error processing your payment. Please try again.');
+                }
+            }).render('#paypal-button-container');
+            
+            // Add credit card, debit card and other payment methods via PayPal
+            paypal.Buttons({
+                fundingSource: paypal.FUNDING.CARD,
+                style: {
+                    color: 'black',
+                    shape: 'rect',
+                    label: 'pay'
+                },
+                createOrder: function() {
+                    // Same as above
+                    return fetch('/pay', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            amount: amount,
+                            description: `Money transfer to ${recipient} in ${getCountryName(country)}`,
+                            items: [{
+                                name: 'Money Transfer Service',
+                                description: `Transfer to ${recipient} in ${getCountryName(country)}`,
+                                quantity: 1,
+                                unit_amount: {
+                                    currency_code: 'USD',
+                                    value: amount
+                                }
+                            }]
+                        })
+                    })
+                    .then(function(response) {
+                        return response.json();
+                    })
+                    .then(function(data) {
+                        const orderUrl = new URL(data.url);
+                        const token = orderUrl.searchParams.get('token');
+                        return token;
+                    });
+                },
+                onApprove: function(data) {
+                    // Same as above
+                    return fetch(`/complete-order?token=${data.orderID}`, {
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    })
+                    .then(function(response) {
+                        return response.json();
+                    })
+                    .then(function(details) {
+                        if (details.success) {
+                            alert('Transaction completed! Your transfer is being processed.');
+                            window.location.href = '/';
+                        } else {
+                            throw new Error('Transaction could not be completed.');
+                        }
+                    });
+                }
+            }).render('#paypal-button-container');
+        }
+        
+        // Helper function to get country name from code
+        function getCountryName(code) {
+            const countries = {
+                'HT': 'Haiti',
+                'DR': 'Dominican Republic',
+                'JM': 'Jamaica',
+                'MX': 'Mexico',
+                'CO': 'Colombia'
+            };
+            return countries[code] || code;
+        }
+    </script>
 </body>
 </html>
