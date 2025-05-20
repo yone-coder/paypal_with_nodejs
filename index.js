@@ -3,6 +3,7 @@ const express = require('express')
 const cors = require('cors')
 const bodyParser = require('body-parser')
 const paypal = require('./services/paypal')
+const path = require('path')
 
 const app = express()
 
@@ -17,10 +18,16 @@ app.use(cors({
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }))
 
+// Set up EJS and static files
 app.set('view engine', 'ejs')
+app.set('views', path.join(__dirname, 'views'))
+app.use(express.static(path.join(__dirname, 'public')))
 
+// Pass PayPal client ID to the frontend
 app.get('/', (req, res) => {
-    res.render('index')
+    res.render('index', { 
+        paypalClientId: process.env.PAYPAL_CLIENT_ID 
+    })
 })
 
 // GET endpoint for frontend redirect
@@ -28,14 +35,15 @@ app.get('/pay', async(req, res) => {
     try {
         // Get amount from query parameter
         const amount = req.query.amount || '10.00'
-        
+        const description = req.query.description || 'International Money Transfer'
+
         // Create PayPal order with the provided amount
         const url = await paypal.createOrder({
             amount: amount.toString(),
-            description: 'International Money Transfer',
+            description,
             items: [{
                 name: 'Money Transfer Service',
-                description: 'International money transfer to Haiti',
+                description: 'International money transfer',
                 quantity: 1,
                 unit_amount: {
                     currency_code: 'USD',
@@ -43,7 +51,7 @@ app.get('/pay', async(req, res) => {
                 }
             }]
         })
-        
+
         // Redirect to PayPal
         res.redirect(url)
     } catch (error) {
@@ -57,7 +65,7 @@ app.post('/pay', async(req, res) => {
     try {
         // Get payment details from request body
         const { amount = '10.00', description = 'International Money Transfer', items = [] } = req.body
-        
+
         // Create PayPal order with the provided details
         const url = await paypal.createOrder({
             amount: amount.toString(),
@@ -66,28 +74,19 @@ app.post('/pay', async(req, res) => {
         })
 
         // Return the URL directly for API requests
-        if (req.headers['content-type'] === 'application/json') {
-            return res.json({ url })
-        }
-        
-        // Otherwise redirect for browser requests
-        res.redirect(url)
+        return res.json({ url })
     } catch (error) {
         console.error('PayPal create order error:', error)
-        
+
         // Return error as JSON for API requests
-        if (req.headers['content-type'] === 'application/json') {
-            return res.status(500).json({ error: error.message || 'Failed to create PayPal order' })
-        }
-        
-        res.status(500).send('Error: ' + error.message)
+        return res.status(500).json({ error: error.message || 'Failed to create PayPal order' })
     }
 })
 
 app.get('/complete-order', async (req, res) => {
     try {
         const result = await paypal.capturePayment(req.query.token)
-        
+
         // Check if the payment was successfully captured
         if (result.status === 'COMPLETED') {
             // For API clients that might be checking the status
@@ -98,7 +97,7 @@ app.get('/complete-order', async (req, res) => {
                     transaction: result
                 })
             }
-            
+
             // Render success page for browser clients
             res.send(`
                 <html>
@@ -127,12 +126,12 @@ app.get('/complete-order', async (req, res) => {
         }
     } catch (error) {
         console.error('PayPal capture payment error:', error)
-        
+
         // Return error as JSON for API requests
         if (req.headers.accept === 'application/json') {
             return res.status(500).json({ error: error.message || 'Failed to capture payment' })
         }
-        
+
         res.status(500).send(`
             <html>
             <head>
@@ -165,7 +164,7 @@ app.get('/cancel-order', (req, res) => {
             message: 'Payment was canceled by the user'
         })
     }
-    
+
     // Render cancellation page for browser clients
     res.send(`
         <html>
