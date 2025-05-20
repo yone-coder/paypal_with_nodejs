@@ -1,94 +1,37 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-const paypal = require('./services/paypal');
-const path = require('path');
+require('dotenv').config()
+const express = require('express')
+const paypal = require('./services/paypal')
 
-const app = express();
+const app = express()
 
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST'],
-    credentials: true
-}));
-
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-app.use(express.static(path.join(__dirname, 'public')));
+app.set('view engine', 'ejs')
 
 app.get('/', (req, res) => {
-    res.render('index', { 
-        paypalClientId: process.env.PAYPAL_CLIENT_ID 
-    });
-});
+    res.render('index')
+})
 
-app.post('/create-order', async(req, res) => {
+app.post('/pay', async(req, res) => {
     try {
-        const { amount = '10.00', description = 'Payment' } = req.body;
+        const url = await paypal.createOrder()
 
-        const order = await paypal.createOrder({
-            amount: amount.toString(),
-            description,
-            intent: 'CAPTURE'
-        });
-
-        res.json(order);
+        res.redirect(url)
     } catch (error) {
-        console.error('Order creation error:', error);
-        res.status(500).json({ error: error.message });
+        res.send('Error: ' + error)
     }
-});
+})
 
-app.post('/capture-order', async(req, res) => {
+app.get('/complete-order', async (req, res) => {
     try {
-        const { orderID } = req.body;
-        const captureData = await paypal.capturePayment(orderID);
-        res.json(captureData);
+        await paypal.capturePayment(req.query.token)
+
+        res.send('Course purchased successfully')
     } catch (error) {
-        console.error('Capture error:', error);
-        res.status(500).json({ error: error.message });
+        res.send('Error: ' + error)
     }
-});
+})
 
-app.post('/process-card', async (req, res) => {
-    try {
-        const { amount, description, cardDetails } = req.body;
+app.get('/cancel-order', (req, res) => {
+    res.redirect('/')
+})
 
-        if (!amount || !cardDetails) {
-            return res.status(400).json({ error: 'Missing required payment information' });
-        }
-
-        if (!cardDetails.number || !cardDetails.expiry || !cardDetails.cvc) {
-            return res.status(400).json({ error: 'Invalid card details' });
-        }
-
-        const result = await paypal.createCardOrder({
-            amount: amount.toString(),
-            description: description || 'Payment',
-            cardDetails
-        });
-
-        res.json({
-            success: true,
-            message: 'Payment processed successfully',
-            transaction: result
-        });
-    } catch (error) {
-        console.error('Card processing error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'ok' });
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+app.listen(3000, () => console.log('Server started on port 3000'))
