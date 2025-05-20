@@ -1,5 +1,8 @@
 const axios = require('axios');
 
+/**
+ * Generate an access token using PayPal client credentials
+ */
 async function generateAccessToken() {
     const response = await axios({
         url: `${process.env.PAYPAL_BASE_URL}/v1/oauth2/token`,
@@ -14,8 +17,92 @@ async function generateAccessToken() {
     return response.data.access_token;
 }
 
+/**
+ * Create a PayPal order
+ */
+async function createOrder(options = {}) {
+    // Default values
+    const {
+        amount = '10.00', 
+        currency = 'USD', 
+        description = 'International Money Transfer',
+        items = []
+    } = options;
 
-// Add this function to your paypal.js service file
+    // Get access token
+    const accessToken = await generateAccessToken();
+
+    // Prepare the order data
+    const orderData = {
+        intent: 'CAPTURE',
+        purchase_units: [
+            {
+                description,
+                amount: {
+                    currency_code: currency,
+                    value: amount
+                }
+            }
+        ],
+        application_context: {
+            return_url: `${process.env.BASE_URL}/complete-order`,
+            cancel_url: `${process.env.BASE_URL}/cancel-order`,
+            brand_name: 'Money Transfer Service',
+            user_action: 'PAY_NOW',
+            shipping_preference: 'NO_SHIPPING'
+        }
+    };
+
+    // Add items if provided
+    if (items && items.length > 0) {
+        orderData.purchase_units[0].items = items;
+    }
+
+    try {
+        const response = await axios({
+            url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders`,
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            data: orderData
+        });
+
+        // Find the approval URL
+        const links = response.data.links;
+        const approvalUrl = links.find(link => link.rel === 'approve').href;
+
+        return approvalUrl;
+    } catch (error) {
+        console.error('PayPal create order error:', error.response?.data || error.message);
+        throw new Error(error.response?.data?.message || 'Failed to create order');
+    }
+}
+
+/**
+ * Capture a payment after user approval
+ */
+async function capturePayment(orderID) {
+    // Get access token
+    const accessToken = await generateAccessToken();
+
+    try {
+        const response = await axios({
+            url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders/${orderID}/capture`,
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+
+        return response.data;
+    } catch (error) {
+        console.error('PayPal capture payment error:', error.response?.data || error.message);
+        throw new Error(error.response?.data?.message || 'Failed to capture payment');
+    }
+}
 
 /**
  * Process a card payment directly without requiring PayPal login
@@ -35,7 +122,7 @@ async function createCardOrder(options = {}) {
 
     // Parse expiry date MM/YY format
     const [expMonth, expYear] = cardDetails.expiry ? cardDetails.expiry.split('/') : ['', ''];
-    
+
     try {
         // First create a payment source using the card details
         const sourceResponse = await axios({
@@ -108,10 +195,9 @@ async function createCardOrder(options = {}) {
     }
 }
 
-// Add this to your module.exports
 module.exports = {
     generateAccessToken,
     createOrder,
     capturePayment,
-    createCardOrder  // Add this new function
+    createCardOrder
 };
