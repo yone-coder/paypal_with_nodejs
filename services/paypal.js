@@ -1,3 +1,4 @@
+// services/paypal.js
 const axios = require('axios');
 
 /**
@@ -38,7 +39,7 @@ async function createOrder(options = {}) {
     // Get access token
     const accessToken = await generateAccessToken();
 
-    // Prepare the order data
+    // Prepare the order data with GUEST CHECKOUT EXPERIENCE
     const orderData = {
         intent: 'CAPTURE',
         purchase_units: [
@@ -54,8 +55,19 @@ async function createOrder(options = {}) {
             return_url: `${process.env.BASE_URL}/complete-order`,
             cancel_url: `${process.env.BASE_URL}/cancel-order`,
             brand_name: process.env.BRAND_NAME || 'Payment Service',
-            user_action: userAction,
-            shipping_preference: noShipping ? 'NO_SHIPPING' : 'GET_FROM_FILE'
+            landing_page: 'GUEST_CHECKOUT', // CRITICAL: Force guest checkout landing page
+            user_action: 'PAY_NOW', // Force immediate payment
+            shipping_preference: noShipping ? 'NO_SHIPPING' : 'GET_FROM_FILE',
+            payment_method: {
+                payee_preferred: 'IMMEDIATE_PAYMENT_REQUIRED' // Force immediate payment options
+            }
+        },
+        experience: {
+            payment_method_preference: 'IMMEDIATE_PAYMENT_REQUIRED',
+            input_fields: {
+                no_shipping: 1,
+                address_override: 1
+            }
         }
     };
 
@@ -66,14 +78,21 @@ async function createOrder(options = {}) {
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${accessToken}`,
-                'PayPal-Request-Id': `order-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+                'PayPal-Request-Id': `order-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                'Prefer': 'return=representation'
             },
             data: orderData
         });
 
-        // Find the approval URL
+        // Find the approval URL - specifically target the GUEST checkout flow
         const links = response.data.links;
-        const approvalUrl = links.find(link => link.rel === 'approve').href;
+        let approvalUrl = links.find(link => link.rel === 'approve').href;
+        
+        // Modify the approval URL to ensure guest checkout
+        if (!approvalUrl.includes('fundingSource=card')) {
+            const separator = approvalUrl.includes('?') ? '&' : '?';
+            approvalUrl = `${approvalUrl}${separator}fundingSource=card`;
+        }
 
         return {
             approvalUrl,
