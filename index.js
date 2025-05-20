@@ -1,6 +1,6 @@
 require('dotenv').config()
 const express = require('express')
-const cors = require('cors') // npm install cors
+const cors = require('cors')
 const bodyParser = require('body-parser')
 const paypal = require('./services/paypal')
 
