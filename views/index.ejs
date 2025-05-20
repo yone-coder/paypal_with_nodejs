@@ -3,445 +3,261 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Money Transfer Service</title>
+    <title>International Money Transfer</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: Arial, sans-serif;
             line-height: 1.6;
-            color: #333;
             margin: 0;
-            padding: 0;
-            background-color: #f8f9fa;
+            padding: 20px;
+            background-color: #f5f5f5;
         }
         .container {
             max-width: 800px;
             margin: 0 auto;
+            background-color: #fff;
             padding: 20px;
-        }
-        header {
-            background-color: #0070ba;
-            color: white;
-            padding: 1rem;
-            text-align: center;
-        }
-        .transfer-form {
-            background-color: white;
-            padding: 2rem;
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-top: 2rem;
         }
-        h1, h2, h3 {
-            color: #2c3e50;
+        h1 {
+            color: #0070ba;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
         }
         input, select {
             width: 100%;
             padding: 10px;
-            margin-bottom: 15px;
             border: 1px solid #ddd;
             border-radius: 4px;
             box-sizing: border-box;
-            font-size: 16px;
         }
-        label {
-            font-weight: 600;
-            display: block;
-            margin-bottom: 5px;
-        }
-        .btn {
-            display: inline-block;
-            background: #0070ba;
+        button {
+            background-color: #0070ba;
             color: white;
-            padding: 12px 20px;
             border: none;
+            padding: 12px 20px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 16px;
-            margin-top: 10px;
+            width: 100%;
         }
-        .payment-methods {
-            margin-top: 20px;
+        button:hover {
+            background-color: #005ea6;
         }
-        #payment-form {
-            margin-top: 20px;
-        }
-        .payment-tabs {
+        .tabs {
             display: flex;
             margin-bottom: 20px;
             border-bottom: 1px solid #ddd;
         }
-        .payment-tab {
+        .tab {
             padding: 10px 20px;
             cursor: pointer;
-            background-color: #f1f1f1;
-            border: 1px solid #ddd;
-            border-bottom: none;
-            border-radius: 4px 4px 0 0;
             margin-right: 5px;
+            border: 1px solid transparent;
+            border-bottom: none;
         }
-        .payment-tab.active {
-            background-color: white;
-            border-bottom: 1px solid white;
+        .tab.active {
+            background-color: #fff;
+            border-color: #ddd;
+            border-radius: 4px 4px 0 0;
             margin-bottom: -1px;
         }
-        .payment-content {
+        .tab-content {
             display: none;
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-top: none;
-            border-radius: 0 0 4px 4px;
         }
-        .payment-content.active {
+        .tab-content.active {
             display: block;
         }
-        .credit-card-form {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
+        .payment-options {
+            margin-top: 30px;
         }
-        .full-width {
-            grid-column: span 2;
-        }
-        .card-number {
-            grid-column: span 2;
-        }
-        .card-icons {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        .card-icon {
-            width: 40px;
-            height: 25px;
-            background-color: #f1f1f1;
+        .payment-info {
+            margin-top: 30px;
+            padding: 15px;
+            background-color: #f8f8f8;
             border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: bold;
+            border-left: 4px solid #0070ba;
         }
         #paypal-button-container {
             margin-top: 20px;
         }
-        .info-box {
-            background-color: #e7f3ff;
-            border-left: 4px solid #0070ba;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 4px;
-        }
-        .secure-badge {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 14px;
-            color: #555;
-            margin-top: 20px;
-        }
     </style>
+    <!-- PayPal JavaScript SDK -->
+    <script src="https://www.paypal.com/sdk/js?client-id=<%= paypalClientId %>&currency=USD"></script>
 </head>
 <body>
-    <header>
-        <h1>Money Transfer Service</h1>
-    </header>
-    
     <div class="container">
-        <div class="transfer-form">
-            <h2>Send Money Internationally</h2>
+        <h1>International Money Transfer</h1>
+        
+        <div class="tabs">
+            <div class="tab active" data-tab="paypal">PayPal</div>
+            <div class="tab" data-tab="credit-card">Credit Card</div>
+        </div>
+        
+        <div class="tab-content active" id="paypal-tab">
+            <div class="form-group">
+                <label for="amount">Amount to Transfer (USD)</label>
+                <input type="number" id="amount" min="1" step="0.01" value="100.00">
+            </div>
             
-            <div>
-                <label for="amount">Amount (USD):</label>
-                <input type="number" id="amount" step="0.01" min="5" value="10.00" required>
-                
-                <label for="recipient">Recipient:</label>
-                <input type="text" id="recipient" placeholder="Recipient's name">
-                
-                <label for="country">Destination Country:</label>
-                <select id="country">
-                    <option value="HT" selected>Haiti</option>
-                    <option value="DR">Dominican Republic</option>
-                    <option value="JM">Jamaica</option>
-                    <option value="MX">Mexico</option>
-                    <option value="CO">Colombia</option>
-                </select>
-                
-                <div class="payment-methods">
-                    <h3>Payment Methods</h3>
-                    
-                    <div class="payment-tabs">
-                        <div class="payment-tab active" onclick="switchTab('credit-card')">Credit Card</div>
-                        <div class="payment-tab" onclick="switchTab('paypal')">PayPal</div>
-                    </div>
-                    
-                    <!-- Credit Card Payment Form -->
-                    <div id="credit-card-content" class="payment-content active">
-                        <div class="info-box">
-                            <p>Fast and secure checkout - no PayPal account required!</p>
-                        </div>
-                        
-                        <div class="card-icons">
-                            <div class="card-icon">Visa</div>
-                            <div class="card-icon">MC</div>
-                            <div class="card-icon">Amex</div>
-                            <div class="card-icon">Disc</div>
-                        </div>
-                        
-                        <form id="credit-card-form" class="credit-card-form">
-                            <div class="full-width">
-                                <label for="card-name">Cardholder Name</label>
-                                <input type="text" id="card-name" placeholder="Name on card" required>
-                            </div>
-                            
-                            <div class="card-number">
-                                <label for="card-number">Card Number</label>
-                                <input type="text" id="card-number" placeholder="1234 5678 9012 3456" maxlength="19" required>
-                            </div>
-                            
-                            <div>
-                                <label for="card-expiry">Expiration Date</label>
-                                <input type="text" id="card-expiry" placeholder="MM/YY" maxlength="5" required>
-                            </div>
-                            
-                            <div>
-                                <label for="card-cvc">Security Code (CVC)</label>
-                                <input type="text" id="card-cvc" placeholder="123" maxlength="4" required>
-                            </div>
-                            
-                            <div class="full-width">
-                                <label for="card-zip">Billing Zip/Postal Code</label>
-                                <input type="text" id="card-zip" placeholder="Zip/Postal Code" required>
-                            </div>
-                            
-                            <div class="full-width">
-                                <button type="submit" class="btn" id="submit-payment">Pay $<span id="payment-amount">10.00</span></button>
-                            </div>
-                            
-                            <div class="secure-badge full-width">
-                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <path d="M8 0C5.8 0 4 1.8 4 4V6H3C2.4 6 2 6.4 2 7V15C2 15.6 2.4 16 3 16H13C13.6 16 14 15.6 14 15V7C14 6.4 13.6 6 13 6H12V4C12 1.8 10.2 0 8 0ZM10 6H6V4C6 2.9 6.9 2 8 2C9.1 2 10 2.9 10 4V6Z" fill="#555"/>
-                                </svg>
-                                Secured checkout via PayPal's payment processing
-                            </div>
-                        </form>
-                    </div>
-                    
-                    <!-- PayPal Button Content -->
-                    <div id="paypal-content" class="payment-content">
-                        <div class="info-box">
-                            <p>Pay quickly with your PayPal account</p>
-                        </div>
-                        <div id="paypal-button-container"></div>
-                    </div>
+            <div class="form-group">
+                <label for="description">Purpose of Transfer</label>
+                <input type="text" id="description" value="International Money Transfer">
+            </div>
+            
+            <div id="paypal-button-container"></div>
+            
+            <div class="payment-info">
+                <p><strong>Note:</strong> You will be redirected to PayPal to complete your payment securely.</p>
+            </div>
+        </div>
+        
+        <div class="tab-content" id="credit-card-tab">
+            <div class="form-group">
+                <label for="cc-amount">Amount to Transfer (USD)</label>
+                <input type="number" id="cc-amount" min="1" step="0.01" value="100.00">
+            </div>
+            
+            <div class="form-group">
+                <label for="cc-description">Purpose of Transfer</label>
+                <input type="text" id="cc-description" value="International Money Transfer">
+            </div>
+            
+            <div class="form-group">
+                <label for="card-number">Card Number</label>
+                <input type="text" id="card-number" placeholder="1234 5678 9012 3456">
+            </div>
+            
+            <div style="display: flex; gap: 10px;">
+                <div class="form-group" style="flex: 1;">
+                    <label for="card-expiry">Expiry (MM/YY)</label>
+                    <input type="text" id="card-expiry" placeholder="MM/YY">
                 </div>
+                <div class="form-group" style="flex: 1;">
+                    <label for="card-cvc">CVC</label>
+                    <input type="text" id="card-cvc" placeholder="123">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="card-name">Cardholder Name</label>
+                <input type="text" id="card-name" placeholder="John Doe">
+            </div>
+            
+            <button id="process-card-btn">Process Payment</button>
+            
+            <div class="payment-info">
+                <p><strong>Note:</strong> Your card details are processed securely.</p>
             </div>
         </div>
     </div>
 
-    <!-- PayPal JavaScript SDK -->
-    <script src="https://www.paypal.com/sdk/js?client-id=<%= paypalClientId %>&currency=USD&components=buttons,hosted-fields"></script>
-    
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Update amount display when amount input changes
-            const amountInput = document.getElementById('amount');
-            const paymentAmountSpan = document.getElementById('payment-amount');
-            
-            amountInput.addEventListener('input', function() {
-                paymentAmountSpan.textContent = amountInput.value;
-            });
-            
-            // Initialize PayPal Smart Buttons
-            initPayPalButtons();
-            
-            // Set up credit card form submission
-            document.getElementById('credit-card-form').addEventListener('submit', function(event) {
-                event.preventDefault();
-                processCardPayment();
-            });
-            
-            // Format card number with spaces
-            document.getElementById('card-number').addEventListener('input', function(e) {
-                let value = e.target.value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
-                let formattedValue = '';
-                for (let i = 0; i < value.length; i++) {
-                    if (i > 0 && i % 4 === 0) {
-                        formattedValue += ' ';
-                    }
-                    formattedValue += value[i];
-                }
-                e.target.value = formattedValue;
-            });
-            
-            // Format expiry date with slash
-            document.getElementById('card-expiry').addEventListener('input', function(e) {
-                let value = e.target.value.replace(/\D/g, '');
-                if (value.length > 2) {
-                    e.target.value = value.substring(0, 2) + '/' + value.substring(2);
-                } else {
-                    e.target.value = value;
-                }
+        // Tab functionality
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active class from all tabs
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+                
+                // Add active class to clicked tab
+                tab.classList.add('active');
+                document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
             });
         });
         
-        function switchTab(tabId) {
-            // Hide all content
-            document.querySelectorAll('.payment-content').forEach(content => {
-                content.classList.remove('active');
-            });
-            
-            // Deactivate all tabs
-            document.querySelectorAll('.payment-tab').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            
-            // Activate selected tab and content
-            document.getElementById(tabId + '-content').classList.add('active');
-            document.querySelector(`.payment-tab[onclick="switchTab('${tabId}')"]`).classList.add('active');
-        }
+        // PayPal Button Integration
+        paypal.Buttons({
+            createOrder: function() {
+                const amount = document.getElementById('amount').value;
+                const description = document.getElementById('description').value;
+                
+                // Call your server to create the order
+                return fetch('/pay', {
+                    method: 'post',
+                    headers: {
+                        'content-type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        amount: amount,
+                        description: description
+                    })
+                }).then(function(res) {
+                    return res.json();
+                }).then(function(data) {
+                    // Extract the PayPal URL from the response
+                    // We need to extract the token from the URL
+                    const url = new URL(data.url);
+                    const token = url.searchParams.get('token');
+                    return token;
+                });
+            },
+            onApprove: function(data) {
+                // Redirect to your server's capture route
+                window.location.href = `/complete-order?token=${data.orderID}`;
+            },
+            onCancel: function() {
+                window.location.href = '/cancel-order';
+            },
+            onError: function(err) {
+                console.error('PayPal error:', err);
+                alert('There was an error processing your payment. Please try again.');
+            }
+        }).render('#paypal-button-container');
         
-        function initPayPalButtons() {
-            paypal.Buttons({
-                style: {
-                    color: 'blue',
-                    shape: 'rect',
-                    label: 'pay'
-                },
-                
-                createOrder: function() {
-                    const amount = document.getElementById('amount').value;
-                    const recipient = document.getElementById('recipient').value || 'Recipient';
-                    const country = document.getElementById('country').value;
-                    
-                    return fetch('/pay', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            amount: amount,
-                            description: `Money transfer to ${recipient} in ${getCountryName(country)}`,
-                            items: [{
-                                name: 'Money Transfer Service',
-                                description: `Transfer to ${recipient} in ${getCountryName(country)}`,
-                                quantity: 1,
-                                unit_amount: {
-                                    currency_code: 'USD',
-                                    value: amount
-                                }
-                            }]
-                        })
-                    })
-                    .then(function(response) {
-                        return response.json();
-                    })
-                    .then(function(data) {
-                        // Extract and return the order ID from the server response
-                        const orderUrl = new URL(data.url);
-                        const token = orderUrl.searchParams.get('token');
-                        return token;
-                    });
-                },
-                
-                onApprove: function(data) {
-                    return fetch(`/complete-order?token=${data.orderID}`, {
-                        headers: {
-                            'Accept': 'application/json'
-                        }
-                    })
-                    .then(function(response) {
-                        return response.json();
-                    })
-                    .then(function(details) {
-                        if (details.success) {
-                            alert('Transaction completed! Your transfer is being processed.');
-                            window.location.href = '/';
-                        } else {
-                            throw new Error('Transaction could not be completed.');
-                        }
-                    });
-                },
-                
-                onError: function(err) {
-                    console.error('PayPal error:', err);
-                    alert('There was an error processing your payment. Please try again.');
-                }
-            }).render('#paypal-button-container');
-        }
-        
-        // Process credit card payment
-        function processCardPayment() {
-            const amount = document.getElementById('amount').value;
-            const recipient = document.getElementById('recipient').value || 'Recipient';
-            const country = document.getElementById('country').value;
-            const cardName = document.getElementById('card-name').value;
-            const cardNumber = document.getElementById('card-number').value.replace(/\s/g, '');
+        // Credit Card Processing
+        document.getElementById('process-card-btn').addEventListener('click', function() {
+            const amount = document.getElementById('cc-amount').value;
+            const description = document.getElementById('cc-description').value;
+            const cardNumber = document.getElementById('card-number').value;
             const cardExpiry = document.getElementById('card-expiry').value;
             const cardCvc = document.getElementById('card-cvc').value;
-            const cardZip = document.getElementById('card-zip').value;
+            const cardName = document.getElementById('card-name').value;
             
-            // Validate inputs (simple validation)
-            if (!cardName || !cardNumber || !cardExpiry || !cardCvc || !cardZip) {
+            // Basic validation
+            if (!cardNumber || !cardExpiry || !cardCvc || !cardName) {
                 alert('Please fill in all card details');
                 return;
             }
             
-            if (cardNumber.length < 13 || cardNumber.length > 19) {
-                alert('Invalid card number');
-                return;
-            }
-            
-            // Create button text spinner
-            const submitBtn = document.getElementById('submit-payment');
-            const originalBtnText = submitBtn.innerHTML;
-            submitBtn.innerHTML = 'Processing...';
-            submitBtn.disabled = true;
-            
-            // Submit to server-side endpoint for card processing
+            // Call your server to process the card
             fetch('/process-card', {
-                method: 'POST',
+                method: 'post',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'content-type': 'application/json'
                 },
                 body: JSON.stringify({
                     amount: amount,
-                    description: `Money transfer to ${recipient} in ${getCountryName(country)}`,
+                    description: description,
                     cardDetails: {
-                        name: cardName,
                         number: cardNumber,
                         expiry: cardExpiry,
                         cvc: cardCvc,
-                        zip: cardZip
+                        name: cardName
                     }
                 })
             })
-            .then(response => response.json())
+            .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    window.location.href = data.redirectUrl || '/payment-success';
+                    window.location.href = data.redirectUrl;
                 } else {
-                    throw new Error(data.error || 'Payment processing failed');
+                    alert('Payment failed: ' + (data.error || 'Unknown error'));
                 }
             })
-            .catch(error => {
-                alert('Payment error: ' + error.message);
-                // Reset button state
-                submitBtn.innerHTML = originalBtnText;
-                submitBtn.disabled = false;
+            .catch(err => {
+                console.error('Payment error:', err);
+                alert('There was an error processing your payment. Please try again.');
             });
-        }
-        
-        // Helper function to get country name from code
-        function getCountryName(code) {
-            const countries = {
-                'HT': 'Haiti',
-                'DR': 'Dominican Republic',
-                'JM': 'Jamaica',
-                'MX': 'Mexico',
-                'CO': 'Colombia'
-            };
-            return countries[code] || code;
-        }
+        });
     </script>
 </body>
 </html>
