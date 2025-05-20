@@ -58,7 +58,14 @@ exports.createOrder = async () => {
                 cancel_url: process.env.BASE_URL + '/cancel-order',
                 shipping_preference: 'NO_SHIPPING',
                 user_action: 'PAY_NOW',
-                brand_name: 'manfra.io'
+                brand_name: 'manfra.io',
+                // This enables guest checkout without requiring PayPal account
+                landing_page: 'BILLING',
+                // Allow guest checkout
+                payment_method: {
+                    payee_preferred: 'IMMEDIATE_PAYMENT_REQUIRED',
+                    standard_entry_class_code: 'WEB'
+                }
             }
         })
     })
