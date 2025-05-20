@@ -189,6 +189,73 @@ app.get('/cancel-order', (req, res) => {
     `)
 })
 
+// Process credit card payment
+app.post('/process-card', async (req, res) => {
+    try {
+        const { amount, description, cardDetails } = req.body;
+        
+        // Validate required fields
+        if (!amount || !cardDetails) {
+            return res.status(400).json({ success: false, error: 'Missing required payment information' });
+        }
+        
+        // Validate card details
+        if (!cardDetails.number || !cardDetails.expiry || !cardDetails.cvc) {
+            return res.status(400).json({ success: false, error: 'Invalid card details' });
+        }
+        
+        // Here we're using PayPal's advanced card processing flow
+        // First create an order
+        const order = await paypal.createCardOrder({
+            amount: amount.toString(),
+            description,
+            cardDetails
+        });
+        
+        // If successful, redirect to success page or return success response
+        res.json({
+            success: true,
+            message: 'Payment processed successfully',
+            redirectUrl: `/payment-success?id=${order.id}`
+        });
+        
+    } catch (error) {
+        console.error('Card processing error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to process payment'
+        });
+    }
+});
+
+// Success page for card payments
+app.get('/payment-success', (req, res) => {
+    const transactionId = req.query.id || 'N/A';
+    
+    res.send(`
+        <html>
+        <head>
+            <title>Payment Successful</title>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+                .success { color: green; }
+                .container { max-width: 600px; margin: 0 auto; }
+                .btn { display: inline-block; background: #007bff; color: white; padding: 10px 20px; 
+                       text-decoration: none; border-radius: 5px; margin-top: 20px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1 class="success">Payment Successful!</h1>
+                <p>Your transfer has been processed successfully.</p>
+                <p>Transaction ID: ${transactionId}</p>
+                <a href="/" class="btn">Return to Home</a>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' })
