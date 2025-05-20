@@ -106,7 +106,7 @@ async function capturePayment(orderID) {
 
 /**
  * Process a card payment directly without requiring PayPal login
- * This uses PayPal's card processing capabilities
+ * Using PayPal's Advanced Card Processing
  */
 async function createCardOrder(options = {}) {
     // Default values
@@ -122,41 +122,17 @@ async function createCardOrder(options = {}) {
 
     // Parse expiry date MM/YY format
     const [expMonth, expYear] = cardDetails.expiry ? cardDetails.expiry.split('/') : ['', ''];
-
+    
     try {
-        // First create a payment source using the card details
-        const sourceResponse = await axios({
-            url: `${process.env.PAYPAL_BASE_URL}/v2/vault/payment-tokens`,
-            method: 'post',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`
-            },
-            data: {
-                payment_source: {
-                    card: {
-                        number: cardDetails.number,
-                        expiry: `20${expYear}-${expMonth}`,
-                        security_code: cardDetails.cvc,
-                        name: cardDetails.name,
-                        billing_address: {
-                            postal_code: cardDetails.zip
-                        }
-                    }
-                }
-            }
-        });
-
-        // Get the payment token ID
-        const paymentTokenId = sourceResponse.data.id;
-
-        // Now create the order using the payment source
+        // Create an order with payment_source directly
+        // This follows PayPal's recommended approach for advanced card processing
         const orderResponse = await axios({
             url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders`,
             method: 'post',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${accessToken}`,
+                'PayPal-Request-Id': `order-${Date.now()}-${Math.floor(Math.random() * 1000)}`
             },
             data: {
                 intent: 'CAPTURE',
@@ -170,9 +146,18 @@ async function createCardOrder(options = {}) {
                     }
                 ],
                 payment_source: {
-                    token: {
-                        id: paymentTokenId,
-                        type: 'PAYMENT_METHOD_TOKEN'
+                    card: {
+                        number: cardDetails.number,
+                        expiry: `20${expYear}-${expMonth}`,
+                        security_code: cardDetails.cvc,
+                        name: cardDetails.name || 'Card Holder',
+                        billing_address: {
+                            address_line_1: cardDetails.address || '123 Billing St',
+                            admin_area_2: cardDetails.city || 'City',
+                            admin_area_1: cardDetails.state || 'State',
+                            postal_code: cardDetails.zip || '12345',
+                            country_code: cardDetails.country || 'US'
+                        }
                     }
                 }
             }
@@ -184,7 +169,8 @@ async function createCardOrder(options = {}) {
             method: 'post',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${accessToken}`,
+                'PayPal-Request-Id': `capture-${Date.now()}-${Math.floor(Math.random() * 1000)}`
             }
         });
 
