@@ -1,6 +1,6 @@
 require('dotenv').config()
 const express = require('express')
-const cors = require('cors') // You'll need to install this: npm install cors
+const cors = require('cors') // npm install cors
 const bodyParser = require('body-parser')
 const paypal = require('./services/paypal')
 
@@ -23,6 +23,36 @@ app.get('/', (req, res) => {
     res.render('index')
 })
 
+// GET endpoint for frontend redirect
+app.get('/pay', async(req, res) => {
+    try {
+        // Get amount from query parameter
+        const amount = req.query.amount || '10.00'
+        
+        // Create PayPal order with the provided amount
+        const url = await paypal.createOrder({
+            amount: amount.toString(),
+            description: 'International Money Transfer',
+            items: [{
+                name: 'Money Transfer Service',
+                description: 'International money transfer to Haiti',
+                quantity: 1,
+                unit_amount: {
+                    currency_code: 'USD',
+                    value: amount.toString()
+                }
+            }]
+        })
+        
+        // Redirect to PayPal
+        res.redirect(url)
+    } catch (error) {
+        console.error('PayPal create order error:', error)
+        res.status(500).send('Error: ' + error.message)
+    }
+})
+
+// POST endpoint for API requests
 app.post('/pay', async(req, res) => {
     try {
         // Get payment details from request body
