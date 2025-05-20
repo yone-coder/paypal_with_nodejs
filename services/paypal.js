@@ -17,21 +17,22 @@ async function generateAccessToken() {
 
         return response.data.access_token;
     } catch (error) {
-        console.error('Error generating PayPal access token:', error.response?.data || error.message);
+        console.error('PayPal authentication error:', error.response?.data || error.message);
         throw new Error('Failed to authenticate with PayPal');
     }
 }
 
 /**
- * Create a PayPal order
+ * Create a PayPal order with guest checkout enabled
  */
 async function createOrder(options = {}) {
     // Default values
     const {
         amount = '10.00', 
         currency = 'USD', 
-        description = 'International Money Transfer',
-        items = []
+        description = 'Payment',
+        userAction = 'PAY_NOW',
+        noShipping = true
     } = options;
 
     // Get access token
@@ -52,43 +53,11 @@ async function createOrder(options = {}) {
         application_context: {
             return_url: `${process.env.BASE_URL}/complete-order`,
             cancel_url: `${process.env.BASE_URL}/cancel-order`,
-            brand_name: 'Money Transfer Service',
-            user_action: 'PAY_NOW',
-            shipping_preference: 'NO_SHIPPING'
+            brand_name: process.env.BRAND_NAME || 'Payment Service',
+            user_action: userAction,
+            shipping_preference: noShipping ? 'NO_SHIPPING' : 'GET_FROM_FILE'
         }
     };
-
-    // Add items if provided
-    if (items && items.length > 0) {
-        orderData.purchase_units[0].items = items;
-        
-        // Add item_total if items are provided
-        const itemTotal = items.reduce((total, item) => {
-            return total + (parseFloat(item.unit_amount.value) * item.quantity);
-        }, 0).toFixed(2);
-        
-        // Make sure items total matches the amount
-        if (itemTotal !== amount) {
-            orderData.purchase_units[0].amount.breakdown = {
-                item_total: {
-                    currency_code: currency,
-                    value: itemTotal
-                },
-                // If there's a discrepancy, add a handling fee to make up the difference
-                handling: {
-                    currency_code: currency,
-                    value: (parseFloat(amount) - parseFloat(itemTotal)).toFixed(2)
-                }
-            };
-        } else {
-            orderData.purchase_units[0].amount.breakdown = {
-                item_total: {
-                    currency_code: currency,
-                    value: itemTotal
-                }
-            };
-        }
-    }
 
     try {
         const response = await axios({
@@ -96,7 +65,8 @@ async function createOrder(options = {}) {
             method: 'post',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${accessToken}`,
+                'PayPal-Request-Id': `order-${Date.now()}-${Math.floor(Math.random() * 1000)}`
             },
             data: orderData
         });
@@ -105,9 +75,12 @@ async function createOrder(options = {}) {
         const links = response.data.links;
         const approvalUrl = links.find(link => link.rel === 'approve').href;
 
-        return approvalUrl;
+        return {
+            approvalUrl,
+            orderID: response.data.id
+        };
     } catch (error) {
-        console.error('PayPal create order error:', error.response?.data || error.message);
+        console.error('Order creation error:', error.response?.data || error.message);
         throw new Error(error.response?.data?.message || 'Failed to create order');
     }
 }
@@ -125,27 +98,27 @@ async function capturePayment(orderID) {
             method: 'post',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}`
+                'Authorization': `Bearer ${accessToken}`,
+                'PayPal-Request-Id': `capture-${Date.now()}-${Math.floor(Math.random() * 1000)}`
             }
         });
 
         return response.data;
     } catch (error) {
-        console.error('PayPal capture payment error:', error.response?.data || error.message);
+        console.error('Payment capture error:', error.response?.data || error.message);
         throw new Error(error.response?.data?.message || 'Failed to capture payment');
     }
 }
 
 /**
- * Process a card payment directly without requiring PayPal login
- * Using PayPal's Advanced Card Processing
+ * Process a card payment directly (no PayPal account required)
  */
 async function createCardOrder(options = {}) {
     // Default values
     const {
         amount = '10.00', 
         currency = 'USD', 
-        description = 'International Money Transfer',
+        description = 'Payment',
         cardDetails = {}
     } = options;
 
@@ -210,7 +183,7 @@ async function createCardOrder(options = {}) {
 
         return captureResponse.data;
     } catch (error) {
-        console.error('PayPal card processing error:', error.response?.data || error.message);
+        console.error('Card processing error:', error.response?.data || error.message);
         throw new Error(error.response?.data?.message || 'Card processing failed');
     }
 }
