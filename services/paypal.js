@@ -14,99 +14,104 @@ async function generateAccessToken() {
     return response.data.access_token;
 }
 
-async function createOrder(options = {}) {
+
+// Add this function to your paypal.js service file
+
+/**
+ * Process a card payment directly without requiring PayPal login
+ * This uses PayPal's card processing capabilities
+ */
+async function createCardOrder(options = {}) {
     // Default values
     const {
         amount = '10.00', 
         currency = 'USD', 
         description = 'International Money Transfer',
-        returnUrl = `${process.env.BASE_URL}/complete-order`,
-        cancelUrl = `${process.env.BASE_URL}/cancel-order`,
-        items = [
-            {
-                name: 'Money Transfer Service',
-                description: 'International money transfer to Haiti',
-                quantity: 1,
-                unit_amount: {
-                    currency_code: 'USD',
-                    value: '10.00'
-                }
-            }
-        ]
+        cardDetails = {}
     } = options;
 
+    // Get access token
     const accessToken = await generateAccessToken();
 
-    // Calculate total from items if provided, otherwise use the amount parameter
-    const itemTotal = items.reduce(
-        (sum, item) => sum + parseFloat(item.unit_amount.value) * item.quantity, 
-        0
-    ).toFixed(2);
-
-    // Use calculated itemTotal or fallback to the amount parameter
-    const finalAmount = itemTotal > 0 ? itemTotal : amount;
-
-    const response = await axios({
-        url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders`,
-        method: 'post',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-        },
-        data: {
-            intent: 'CAPTURE',
-            purchase_units: [
-                {
-                    description,
-                    items,
-                    amount: {
-                        currency_code: currency,
-                        value: finalAmount,
-                        breakdown: {
-                            item_total: {
-                                currency_code: currency,
-                                value: finalAmount
-                            }
+    // Parse expiry date MM/YY format
+    const [expMonth, expYear] = cardDetails.expiry ? cardDetails.expiry.split('/') : ['', ''];
+    
+    try {
+        // First create a payment source using the card details
+        const sourceResponse = await axios({
+            url: `${process.env.PAYPAL_BASE_URL}/v2/vault/payment-tokens`,
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            data: {
+                payment_source: {
+                    card: {
+                        number: cardDetails.number,
+                        expiry: `20${expYear}-${expMonth}`,
+                        security_code: cardDetails.cvc,
+                        name: cardDetails.name,
+                        billing_address: {
+                            postal_code: cardDetails.zip
                         }
                     }
                 }
-            ],
-            application_context: {
-                return_url: returnUrl,
-                cancel_url: cancelUrl,
-                shipping_preference: 'NO_SHIPPING',
-                user_action: 'PAY_NOW',
-                brand_name: 'Money Transfer Service',
-                landing_page: 'NO_PREFERENCE', // Uses smart default based on payment flow
-                payment_method: {
-                    payee_preferred: 'IMMEDIATE_PAYMENT_REQUIRED',
-                    payer_selected: 'PAYPAL'  // This is needed for the backend API
+            }
+        });
+
+        // Get the payment token ID
+        const paymentTokenId = sourceResponse.data.id;
+
+        // Now create the order using the payment source
+        const orderResponse = await axios({
+            url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders`,
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            },
+            data: {
+                intent: 'CAPTURE',
+                purchase_units: [
+                    {
+                        description,
+                        amount: {
+                            currency_code: currency,
+                            value: amount
+                        }
+                    }
+                ],
+                payment_source: {
+                    token: {
+                        id: paymentTokenId,
+                        type: 'PAYMENT_METHOD_TOKEN'
+                    }
                 }
             }
-        }
-    });
+        });
 
-    const approveLink = response.data.links.find(link => link.rel === 'approve');
-    return approveLink.href;
+        // Capture the payment immediately
+        const captureResponse = await axios({
+            url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders/${orderResponse.data.id}/capture`,
+            method: 'post',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${accessToken}`
+            }
+        });
+
+        return captureResponse.data;
+    } catch (error) {
+        console.error('PayPal card processing error:', error.response?.data || error.message);
+        throw new Error(error.response?.data?.message || 'Card processing failed');
+    }
 }
 
-async function capturePayment(orderId) {
-    const accessToken = await generateAccessToken();
-
-    const response = await axios({
-        url: `${process.env.PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`,
-        method: 'post',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`
-        }
-    });
-
-    return response.data;
-}
-
+// Add this to your module.exports
 module.exports = {
     generateAccessToken,
     createOrder,
-    capturePayment
+    capturePayment,
+    createCardOrder  // Add this new function
 };
