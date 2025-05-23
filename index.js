@@ -51,7 +51,7 @@ console.log(`PayPal Endpoint: ${endpoint_url}`);
 const get_access_token = async () => {
   const auth = `${client_id}:${client_secret}`;
   const data = 'grant_type=client_credentials';
-  
+
   try {
     const response = await fetch(endpoint_url + '/v1/oauth2/token', {
       method: 'POST',
@@ -61,13 +61,13 @@ const get_access_token = async () => {
       },
       body: data
     });
-    
+
     const json = await response.json();
-    
+
     if (!response.ok) {
       throw new Error(`PayPal Auth Error: ${json.error_description || json.error}`);
     }
-    
+
     return json.access_token;
   } catch (error) {
     console.error('Error getting access token:', error);
@@ -81,22 +81,27 @@ const get_access_token = async () => {
 app.post('/create_order', async (req, res) => {
   try {
     const access_token = await get_access_token();
-    
+    const { amount, in_app_checkout } = req.body;
+
     const order_data = {
       intent: req.body.intent?.toUpperCase() || 'CAPTURE',
       purchase_units: [{
         amount: {
           currency_code: 'USD',
-          value: '100.00'
+          value: amount ? amount.toString() : '100.00'
         },
-        description: 'AI-Generated NFT Bored Ape'
+        description: 'Money Transfer'
       }],
       application_context: {
-        brand_name: 'NFT Store',
+        brand_name: 'Money Transfer App',
         landing_page: 'NO_PREFERENCE',
         user_action: 'PAY_NOW',
-        return_url: 'https://your-domain.com/return',
-        cancel_url: 'https://your-domain.com/cancel'
+        // Remove return_url and cancel_url for in-app checkout
+        // Only add them if this is NOT an in-app checkout
+        ...(in_app_checkout ? {} : {
+          return_url: 'https://your-domain.com/return',
+          cancel_url: 'https://your-domain.com/cancel'
+        })
       }
     };
 
@@ -110,7 +115,7 @@ app.post('/create_order', async (req, res) => {
     });
 
     const json = await response.json();
-    
+
     if (!response.ok) {
       console.error('PayPal create order error:', json);
       return res.status(response.status).json(json);
@@ -118,7 +123,7 @@ app.post('/create_order', async (req, res) => {
 
     console.log('Order created:', json.id);
     res.json(json);
-    
+
   } catch (error) {
     console.error('Error creating order:', error);
     res.status(500).json({ 
@@ -134,14 +139,14 @@ app.post('/create_order', async (req, res) => {
 app.post('/complete_order', async (req, res) => {
   try {
     const { order_id, intent, email } = req.body;
-    
+
     if (!order_id) {
       return res.status(400).json({ error: 'Order ID is required' });
     }
 
     const access_token = await get_access_token();
     const action = intent?.toLowerCase() === 'authorize' ? 'authorize' : 'capture';
-    
+
     const response = await fetch(`${endpoint_url}/v2/checkout/orders/${order_id}/${action}`, {
       method: 'POST',
       headers: {
@@ -151,14 +156,14 @@ app.post('/complete_order', async (req, res) => {
     });
 
     const json = await response.json();
-    
+
     if (!response.ok) {
       console.error('PayPal complete order error:', json);
       return res.status(response.status).json(json);
     }
 
     console.log('Order completed:', json.id);
-    
+
     // Send email receipt if email provided and SendGrid is configured
     if (json.id && email && sendgrid_api_key) {
       try {
@@ -170,7 +175,7 @@ app.post('/complete_order', async (req, res) => {
     }
 
     res.json(json);
-    
+
   } catch (error) {
     console.error('Error completing order:', error);
     res.status(500).json({ 
@@ -200,14 +205,14 @@ app.post('/get_client_token', async (req, res) => {
     });
 
     const data = await response.json();
-    
+
     if (!response.ok) {
       console.error('PayPal client token error:', data);
       return res.status(response.status).json(data);
     }
 
     res.send(data.client_token);
-    
+
   } catch (error) {
     console.error('Error getting client token:', error);
     res.status(500).json({ 
@@ -282,7 +287,7 @@ const send_email_receipt = async ({ id, email }) => {
 
   try {
     const response = await fetch('https://api.sendgrid.com/v3/mail/send', sendgrid_options);
-    
+
     if (response.ok) {
       console.log('Email sent successfully to:', email);
     } else {
