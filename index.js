@@ -1,336 +1,333 @@
-import express from 'express';
-import fetch from 'node-fetch';
-import 'dotenv/config';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const app = express();
-
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// CORS middleware for cross-origin requests
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
-
-// Configuration
-const port = process.env.PORT || 3000;
-const environment = process.env.ENVIRONMENT || 'sandbox';
-const client_id = process.env.PAYPAL_CLIENT_ID;
-const client_secret = process.env.PAYPAL_CLIENT_SECRET;
-const sendgrid_api_key = process.env.SENDGRID_API_KEY;
-
-// Validate required environment variables
-if (!client_id || !client_secret) {
-  console.error('ERROR: PayPal client ID and secret are required');
-  process.exit(1);
-}
-
-const endpoint_url = environment === 'sandbox' 
-  ? 'https://api-m.sandbox.paypal.com' 
-  : 'https://api-m.paypal.com';
-
-console.log(`PayPal Environment: ${environment}`);
-console.log(`PayPal Endpoint: ${endpoint_url}`);
-
-/**
- * Get PayPal access token
- */
-const get_access_token = async () => {
-  const auth = `${client_id}:${client_secret}`;
-  const data = 'grant_type=client_credentials';
-
-  try {
-    const response = await fetch(endpoint_url + '/v1/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(auth).toString('base64')}`
-      },
-      body: data
-    });
-
-    const json = await response.json();
-
-    if (!response.ok) {
-      throw new Error(`PayPal Auth Error: ${json.error_description || json.error}`);
-    }
-
-    return json.access_token;
-  } catch (error) {
-    console.error('Error getting access token:', error);
-    throw error;
-  }
-};
-
-/**
- * Create PayPal order
- */
-app.post('/create_order', async (req, res) => {
-  try {
-    const access_token = await get_access_token();
-    const { amount, in_app_checkout } = req.body;
-
-    const order_data = {
-      intent: req.body.intent?.toUpperCase() || 'CAPTURE',
-      purchase_units: [{
-        amount: {
-          currency_code: 'USD',
-          value: amount ? amount.toString() : '100.00'
-        },
-        description: 'Money Transfer'
-      }],
-      application_context: {
-        brand_name: 'Money Transfer App',
-        landing_page: 'NO_PREFERENCE',
-        user_action: 'PAY_NOW',
-        // Remove return_url and cancel_url for in-app checkout
-        // Only add them if this is NOT an in-app checkout
-        ...(in_app_checkout ? {} : {
-          return_url: 'https://your-domain.com/return',
-          cancel_url: 'https://your-domain.com/cancel'
-        })
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="x-ua-compatible" content="ie=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PPCP Advanced</title>
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/minstyle.io@2.0.1/dist/css/minstyle.io.min.css">
+    <style>
+      .hide {
+          display:none !important;
       }
-    };
-
-    const response = await fetch(endpoint_url + '/v2/checkout/orders', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${access_token}`
-      },
-      body: JSON.stringify(order_data)
-    });
-
-    const json = await response.json();
-
-    if (!response.ok) {
-      console.error('PayPal create order error:', json);
-      return res.status(response.status).json(json);
-    }
-
-    console.log('Order created:', json.id);
-    res.json(json);
-
-  } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).json({ 
-      error: 'Failed to create order',
-      details: error.message 
-    });
-  }
-});
-
-/**
- * Complete PayPal order (capture or authorize)
- */
-app.post('/complete_order', async (req, res) => {
-  try {
-    const { order_id, intent, email } = req.body;
-
-    if (!order_id) {
-      return res.status(400).json({ error: 'Order ID is required' });
-    }
-
-    const access_token = await get_access_token();
-    const action = intent?.toLowerCase() === 'authorize' ? 'authorize' : 'capture';
-
-    const response = await fetch(`${endpoint_url}/v2/checkout/orders/${order_id}/${action}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${access_token}`
+      .spinner-container {
+          width: 100px;
+          height: 100px;
+          display: flex;
+          justify-content: center;
+          align-items: center;
       }
-    });
 
-    const json = await response.json();
-
-    if (!response.ok) {
-      console.error('PayPal complete order error:', json);
-      return res.status(response.status).json(json);
-    }
-
-    console.log('Order completed:', json.id);
-
-    // Send email receipt if email provided and SendGrid is configured
-    if (json.id && email && sendgrid_api_key) {
-      try {
-        await send_email_receipt({ id: json.id, email });
-      } catch (emailError) {
-        console.error('Email sending failed:', emailError);
-        // Don't fail the whole request if email fails
+      .div_input {
+        display: inline-block;
+        height: 40px;
+        width: 100%;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        -webkit-box-sizing: border-box;
+        box-sizing: border-box;
+        -webkit-box-shadow: none;
+        box-shadow: none;
+        font-size: 0.98rem;
+        background-color: rgba(var(--main-bg), 1);
+        border: 2px solid rgba(var(--default-border-color), 1);
+        border-radius: var(--default-border-radius);
+        margin: 0;
+        padding: 0 0.8rem;
       }
-    }
 
-    res.json(json);
+      .spinner {
+          border: 8px solid rgba(0, 0, 0, 0.1);
+          border-top-color: lightblue;
+          border-radius: 50%;
+          width: 50px;
+          height: 50px;
+          animation: spin 1s ease-in-out infinite;
+      }
 
-  } catch (error) {
-    console.error('Error completing order:', error);
-    res.status(500).json({ 
-      error: 'Failed to complete order',
-      details: error.message 
-    });
-  }
-});
-
-/**
- * Get client token for hosted fields
- */
-app.post('/get_client_token', async (req, res) => {
-  try {
-    const access_token = await get_access_token();
-    const { customer_id } = req.body;
-
-    const payload = customer_id ? JSON.stringify({ customer_id }) : null;
-
-    const response = await fetch(endpoint_url + '/v1/identity/generate-token', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json'
-      },
-      body: payload
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('PayPal client token error:', data);
-      return res.status(response.status).json(data);
-    }
-
-    res.send(data.client_token);
-
-  } catch (error) {
-    console.error('Error getting client token:', error);
-    res.status(500).json({ 
-      error: 'Failed to get client token',
-      details: error.message 
-    });
-  }
-});
-
-/**
- * Send email receipt using SendGrid
- */
-const send_email_receipt = async ({ id, email }) => {
-  if (!sendgrid_api_key) {
-    console.log('SendGrid API key not configured, skipping email');
-    return;
-  }
-
-  const html_content = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>Payment Receipt</title>
-    </head>
-    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <div style="background-color: #f8f9fa; padding: 30px; text-align: center; border-radius: 10px;">
-        <h1 style="color: #28a745;">Payment Successful!</h1>
-        <p style="font-size: 18px; margin: 20px 0;">
-          Thank you for purchasing the AI-Generated NFT Bored Ape!
-        </p>
-        <p style="font-size: 16px; color: #666;">
-          Transaction ID: <strong>${id}</strong>
-        </p>
-        <p style="font-size: 16px; color: #666;">
-          Amount: <strong>$100.00 USD</strong>
-        </p>
-        <div style="margin: 30px 0;">
-          <a href="#" style="background-color: #007bff; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
-            Download Your NFT
-          </a>
+      @keyframes spin {
+          to {
+              transform: rotate(360deg);
+          }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="row">
+        <div class="col-sm"></div>
+        <div class="col-sm">
+          <h2 class="ms-text-center">ai-generated NFT Bored Ape</h2>
+          <div class="ms-text-center pb-2">
+            <div class="ms-label ms-large ms-action2 ms-light">$100.00 USD</div>
+          </div>
+          <div id="alerts" class="ms-text-center"></div>
+          <div id="loading" class="spinner-container ms-div-center">
+            <div class="spinner"></div>
+          </div>
+          <div id="content" class="hide">
+            <div class="ms-card ms-fill">
+              <div class="ms-card-content">
+                <img src="https://cdn.discordapp.com/attachments/1060825015681028127/1076385063903694908/rauljr7_3d_e83fed6a-69aa-4a6a-b0ec-928edd57aecf.png" style="width:400px">
+              </div>
+            </div>
+            <div id="payment_options">
+              <form class="row ms-form-group" id="card-form">
+              <div>
+                <label for="card-number">Card Number</label>
+                <div class="div_input" type="text" id="card-number"></div>
+              </div>
+              <div class="col-md mb-2">
+                <label for="expiration-date">Expiration Date</label>
+                <div id="expiration-date" class="div_input"></div>
+              </div>
+              <div class="col-md mb-2">
+                <label for="cvv">Security Code</label>
+                <div id="cvv" class="div_input"></div>
+              </div>
+              <div>
+                <label for="email">Email</label>
+                <input value placeholder="username@email.com" type="email" id="email" class="div_input" required>
+              </div>
+              <div><input class="ms-fullwidth mt-2 ms-medium" type="submit" value="Purchase"></div>
+            </form>
+              <hr><hr>
+            </div>
+          </div>
         </div>
-        <p style="font-size: 14px; color: #888; margin-top: 30px;">
-          If you have any questions, please contact our support team.
-        </p>
+        <div class="col-sm"></div>
+        <footer style="margin-top:50px" class="ms-footer"> Footer Intentionally left empty :) </footer>
       </div>
-    </body>
-    </html>
-  `;
+    </div>
 
-  const sendgrid_options = {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${sendgrid_api_key}`
-    },
-    body: JSON.stringify({
-      personalizations: [{
-        to: [{ email }],
-        subject: 'Thank you for purchasing our NFT!'
-      }],
-      from: { 
-        email: process.env.FROM_EMAIL || 'noreply@yourstore.com',
-        name: 'NFT Store'
-      },
-      content: [{
-        type: 'text/html',
-        value: html_content
-      }]
-    })
-  };
+    <script>
+      // Configuration - Update this URL to your deployed backend
+      const BACKEND_URL = 'http://localhost:3000'; // Change this to your Render.com URL
 
-  try {
-    const response = await fetch('https://api.sendgrid.com/v3/mail/send', sendgrid_options);
+      // Helper / Utility functions
+      let current_customer_id;
+      let order_id;
+      let script_to_head = (attributes_object) => {
+          return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            for (const name of Object.keys(attributes_object)) {
+              script.setAttribute(name, attributes_object[name]);
+            }
+            document.head.appendChild(script);
+            script.addEventListener('load', resolve);
+            script.addEventListener('error', reject);
+          });
+      }
+      let reset_purchase_button = () => {
+          document.querySelector("#card-form").querySelector("input[type='submit']").removeAttribute("disabled");
+          document.querySelector("#card-form").querySelector("input[type='submit']").value = "Purchase";
+      }
 
-    if (response.ok) {
-      console.log('Email sent successfully to:', email);
-    } else {
-      const error = await response.text();
-      console.error('SendGrid error:', error);
-    }
-  } catch (error) {
-    console.error('Error sending email:', error);
-  }
-};
+      const is_user_logged_in = () => {
+        return new Promise((resolve) => {
+          current_customer_id = ""; // No localStorage usage
+          resolve();
+        });
+      }
 
-// Serve static files
-app.use(express.static('public'));
+      const get_client_token = () => {
+        return new Promise(async (resolve, reject) => {
+          try {
+            const response = await fetch(`${BACKEND_URL}/get_client_token`, {
+              method: "POST", 
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ "customer_id": current_customer_id }),
+            });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    environment,
-    timestamp: new Date().toISOString()
-  });
-});
+            const client_token = await response.text();
+            resolve(client_token);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      }
 
-// Serve the main HTML file
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+      let handle_close = (event) => {
+          event.target.closest(".ms-alert").remove();
+      }
+      let handle_click = (event) => {
+          if (event.target.classList.contains("ms-close")) {
+              handle_close(event);
+          }
+      }
+      document.addEventListener("click", handle_click);
 
-// Error handling middleware
-app.use((error, req, res, next) => {
-  console.error('Unhandled error:', error);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
-  });
-});
+      const paypal_sdk_url = "https://www.paypal.com/sdk/js";
+      const client_id = "REPLACE_WITH_YOUR_CLIENT_ID";
+      const currency = "USD";
+      const intent = "capture";
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Not found' });
-});
+      let display_error_alert = () => {
+          document.getElementById("alerts").innerHTML = `<div class="ms-alert ms-action2 ms-small"><span class="ms-close"></span><p>An Error Occurred! (View console for more info)</p></div>`;
+      }
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+      let display_success_message = (object) => {
+          order_details = object.order_details;
+          paypal_buttons = object.paypal_buttons;
+          console.log(order_details);
+          let intent_object = intent === "authorize" ? "authorizations" : "captures";
+          
+          document.getElementById("alerts").innerHTML = `<div class='ms-alert ms-action'>Thank you ` + (order_details?.payer?.name?.given_name || ``) + ` ` + (order_details?.payer?.name?.surname || ``) + ` for your payment of ` + order_details.purchase_units[0].payments[intent_object][0].amount.value + ` ` + order_details.purchase_units[0].payments[intent_object][0].amount.currency_code + `!</div>`;
+
+          paypal_buttons.close();
+          document.getElementById("card-form").classList.add("hide");
+      }
+
+      //PayPal Code
+      is_user_logged_in()
+      .then(() => {
+          return get_client_token();
+      })
+      .then((client_token) => {
+          return script_to_head({"src": paypal_sdk_url + "?client-id=" + client_id + "&enable-funding=venmo&currency=" + currency + "&intent=" + intent + "&components=buttons,hosted-fields", "data-client-token": client_token})
+      })
+      .then(() => {
+          document.getElementById("loading").classList.add("hide");
+          document.getElementById("content").classList.remove("hide");
+          let paypal_buttons = paypal.Buttons({
+              onClick: (data) => {
+                  // Custom JS here
+              },
+              style: {
+                  shape: 'rect',
+                  color: 'gold',
+                  layout: 'vertical',
+                  label: 'paypal'
+              },
+
+              createOrder: function(data, actions) {
+                  return fetch(`${BACKEND_URL}/create_order`, {
+                      method: "post", 
+                      headers: { "Content-Type": "application/json; charset=utf-8" },
+                      body: JSON.stringify({ "intent": intent })
+                  })
+                  .then((response) => response.json())
+                  .then((order) => { return order.id; });
+              },
+
+              onApprove: function(data, actions) {
+                  order_id = data.orderID;
+                  console.log(data);
+                  return fetch(`${BACKEND_URL}/complete_order`, {
+                      method: "post", 
+                      headers: { "Content-Type": "application/json; charset=utf-8" },
+                      body: JSON.stringify({
+                          "intent": intent,
+                          "order_id": order_id
+                      })
+                  })
+                  .then((response) => response.json())
+                  .then((order_details) => {
+                      display_success_message({"order_details": order_details, "paypal_buttons": paypal_buttons});
+                   })
+                   .catch((error) => {
+                      console.log(error);
+                      display_error_alert()
+                   });
+              },
+
+              onCancel: function (data) {
+                  document.getElementById("alerts").innerHTML = `<div class="ms-alert ms-action2 ms-small"><span class="ms-close"></span><p>Order cancelled!</p></div>`;
+              },
+
+              onError: function(err) {
+                  console.log(err);
+              }
+          });
+          paypal_buttons.render('#payment_options');
+          
+          // Hosted Fields
+          if (paypal.HostedFields.isEligible()) {
+              paypal_hosted_fields = paypal.HostedFields.render({
+                createOrder: () => {
+                  return fetch(`${BACKEND_URL}/create_order`, {
+                      method: "post", 
+                      headers: { "Content-Type": "application/json; charset=utf-8" },
+                      body: JSON.stringify({ "intent": intent })
+                  })
+                  .then((response) => response.json())
+                  .then((order) => { order_id = order.id; return order.id; });
+                },
+                styles: {
+                  '.valid': {
+                    color: 'green'
+                  },
+                  '.invalid': {
+                    color: 'red'
+                  },
+                  'input': {
+                      'font-size': '16pt',
+                      'color': '#ffffff'
+                  },
+                },
+                fields: {
+                  number: {
+                    selector: "#card-number",
+                    placeholder: "4111 1111 1111 1111"
+                  },
+                  cvv: {
+                    selector: "#cvv",
+                    placeholder: "123"
+                  },
+                  expirationDate: {
+                    selector: "#expiration-date",
+                    placeholder: "MM/YY"
+                  }
+                }
+              }).then((card_fields) => {
+               document.querySelector("#card-form").addEventListener("submit", (event) => {
+                  event.preventDefault();
+                  document.querySelector("#card-form").querySelector("input[type='submit']").setAttribute("disabled", "");
+                  document.querySelector("#card-form").querySelector("input[type='submit']").value = "Loading...";
+                  card_fields
+                    .submit({
+                      cardholderName: "Raúl Uriarte, Jr.",
+                      billingAddress: {
+                        streetAddress: "123 Springfield Rd",
+                        extendedAddress: "",
+                        region: "AZ",
+                        locality: "CHANDLER",
+                        postalCode: "85224",
+                        countryCodeAlpha2: "US",
+                      },
+                    })
+                    .then(() => {
+                      return fetch(`${BACKEND_URL}/complete_order`, {
+                          method: "post", 
+                          headers: { "Content-Type": "application/json; charset=utf-8" },
+                          body: JSON.stringify({
+                              "intent": intent,
+                              "order_id": order_id,
+                              "email": document.getElementById("email").value
+                          })
+                      })
+                      .then((response) => response.json())
+                      .then((order_details) => {
+                          display_success_message({"order_details": order_details, "paypal_buttons": paypal_buttons});
+                       })
+                       .catch((error) => {
+                          console.log(error);
+                          display_error_alert();
+                       });
+                    })
+                    .catch((err) => {
+                      console.log(err);
+                      reset_purchase_button();
+                      display_error_alert();
+                    });
+                });
+              });
+            }
+      })
+      .catch((error) => {
+          reset_purchase_button();
+      });
+    </script>
+  </body>
+</html>
