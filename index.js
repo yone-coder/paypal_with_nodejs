@@ -1,150 +1,237 @@
-import express from 'express';
-import fetch from 'node-fetch';
-import 'dotenv/config';
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
+require('dotenv').config();
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-// CORS middleware
-app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    
-    if (req.method === 'OPTIONS') {
-        res.sendStatus(200);
-    } else {
-        next();
-    }
-});
-
-// Body parsing middleware
+// Middleware
+app.use(cors());
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Configuration
-const port = process.env.PORT || 3000;
-const environment = process.env.ENVIRONMENT || 'sandbox';
-const client_id = process.env.CLIENT_ID;
-const client_secret = process.env.CLIENT_SECRET;
-const endpoint_url = environment === 'sandbox' ? 'https://api-m.sandbox.paypal.com' : 'https://api-m.paypal.com';
+// PayPal configuration
+const PAYPAL_CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
+const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET;
+const PAYPAL_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? 'https://api-m.paypal.com' 
+  : 'https://api-m.sandbox.paypal.com';
 
-/**
- * Creates an order and returns it as a JSON response.
- */
-app.post('/create_order', (req, res) => {
-    get_access_token()
-        .then(access_token => {
-            let order_data_json = {
-                'intent': req.body.intent.toUpperCase(),
-                'purchase_units': [{
-                    'amount': {
-                        'currency_code': 'USD',
-                        'value': '100.00'
-                    }
-                }]
-            };
-            const data = JSON.stringify(order_data_json);
+// Generate PayPal access token
+const generateAccessToken = async () => {
+  try {
+    const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
+    
+    const response = await axios({
+      method: 'POST',
+      url: `${PAYPAL_BASE_URL}/v1/oauth2/token`,
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Language': 'en_US',
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      data: 'grant_type=client_credentials'
+    });
 
-            fetch(endpoint_url + '/v2/checkout/orders', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${access_token}`
-                    },
-                    body: data
-                })
-                .then(res => res.json())
-                .then(json => {
-                    res.send(json);
-                })
-        })
-        .catch(err => {
-            console.log(err);
-            res.status(500).send(err);
-        });
-});
+    return response.data.access_token;
+  } catch (error) {
+    console.error('Error generating PayPal access token:', error.response?.data || error.message);
+    throw new Error('Failed to generate PayPal access token');
+  }
+};
 
-/**
- * Completes an order and returns it as a JSON response.
- */
-app.post('/complete_order', (req, res) => {
-    get_access_token()
-        .then(access_token => {
-            fetch(endpoint_url + '/v2/checkout/orders/' + req.body.order_id + '/' + req.body.intent, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${access_token}`
-                    }
-                })
-                .then(res => res.json())
-                .then(json => {
-                    console.log(json);
-                    res.send(json);
-                })
-        })
-        .catch(err => {
-            console.log(err);
-            res.status(500).send(err);
-        });
-});
+// Create PayPal order
+app.post('/api/paypal/create-order', async (req, res) => {
+  try {
+    const { amount, currency = 'USD', description = 'Payment' } = req.body;
 
-/**
- * Retrieves a client token and returns it as a JSON response.
- */
-app.post("/get_client_token", (req, res) => {
-    get_access_token()
-      .then((access_token) => {
-        const payload = req.body.customer_id
-          ? JSON.stringify({ customer_id: req.body.customer_id })
-          : null;
-  
-        fetch(endpoint_url + "/v1/identity/generate-token", {
-          method: "post",
-          headers: {
-            Authorization: `Bearer ${access_token}`,
-            "Content-Type": "application/json",
-          },
-          body: payload,
-        })
-          .then((response) => response.json())
-          .then((data) => res.send(data.client_token));
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-        res.status(500).send("An error occurred while processing the request.");
+    if (!amount) {
+      return res.status(400).json({ 
+        error: 'Amount is required' 
       });
+    }
+
+    const accessToken = await generateAccessToken();
+
+    const orderData = {
+      intent: 'CAPTURE',
+      purchase_units: [{
+        amount: {
+          currency_code: currency,
+          value: amount.toString()
+        },
+        description: description
+      }],
+      payment_source: {
+        paypal: {
+          experience_context: {
+            payment_method_preference: 'UNRESTRICTED',
+            brand_name: 'Your Store Name',
+            locale: 'en-US',
+            landing_page: 'LOGIN',
+            shipping_preference: 'NO_SHIPPING',
+            user_action: 'PAY_NOW',
+            return_url: `${req.protocol}://${req.get('host')}/api/paypal/success`,
+            cancel_url: `${req.protocol}://${req.get('host')}/api/paypal/cancel`
+          }
+        }
+      }
+    };
+
+    const response = await axios({
+      method: 'POST',
+      url: `${PAYPAL_BASE_URL}/v2/checkout/orders`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'Prefer': 'return=representation'
+      },
+      data: JSON.stringify(orderData)
+    });
+
+    res.json({
+      id: response.data.id,
+      status: response.data.status,
+      links: response.data.links
+    });
+
+  } catch (error) {
+    console.error('Error creating PayPal order:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to create PayPal order',
+      details: error.response?.data || error.message
+    });
+  }
 });
 
-/**
- * Health check endpoint
- */
+// Capture PayPal payment
+app.post('/api/paypal/capture-order/:orderID', async (req, res) => {
+  try {
+    const { orderID } = req.params;
+
+    if (!orderID) {
+      return res.status(400).json({ 
+        error: 'Order ID is required' 
+      });
+    }
+
+    const accessToken = await generateAccessToken();
+
+    const response = await axios({
+      method: 'POST',
+      url: `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderID}/capture`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'Prefer': 'return=representation'
+      }
+    });
+
+    const captureData = response.data;
+
+    // Check if payment was successful
+    if (captureData.status === 'COMPLETED') {
+      // Here you can add your business logic
+      // e.g., save order to database, send confirmation email, etc.
+      
+      console.log('Payment successful:', {
+        orderID: captureData.id,
+        payerEmail: captureData.payer?.email_address,
+        amount: captureData.purchase_units[0]?.payments?.captures[0]?.amount,
+        transactionID: captureData.purchase_units[0]?.payments?.captures[0]?.id
+      });
+
+      res.json({
+        success: true,
+        orderID: captureData.id,
+        status: captureData.status,
+        payer: captureData.payer,
+        amount: captureData.purchase_units[0]?.payments?.captures[0]?.amount,
+        transactionID: captureData.purchase_units[0]?.payments?.captures[0]?.id
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Payment not completed',
+        status: captureData.status
+      });
+    }
+
+  } catch (error) {
+    console.error('Error capturing PayPal payment:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to capture PayPal payment',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Get order details
+app.get('/api/paypal/order/:orderID', async (req, res) => {
+  try {
+    const { orderID } = req.params;
+    const accessToken = await generateAccessToken();
+
+    const response = await axios({
+      method: 'GET',
+      url: `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderID}`,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json'
+      }
+    });
+
+    res.json(response.data);
+
+  } catch (error) {
+    console.error('Error fetching order details:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to fetch order details',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Success redirect handler
+app.get('/api/paypal/success', (req, res) => {
+  const { token } = req.query;
+  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-success?token=${token}`);
+});
+
+// Cancel redirect handler
+app.get('/api/paypal/cancel', (req, res) => {
+  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-cancelled`);
+});
+
+// Health check endpoint
 app.get('/health', (req, res) => {
-    res.json({ status: 'OK', message: 'Backend is running' });
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
-/**
- * PayPal Developer YouTube Video:
- * How to Retrieve an API Access Token (Node.js)
- * https://www.youtube.com/watch?v=HOkkbGSxmp4
- */
-function get_access_token() {
-    const auth = `${client_id}:${client_secret}`;
-    const data = 'grant_type=client_credentials';
-    return fetch(endpoint_url + '/v1/oauth2/token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Authorization': `Basic ${Buffer.from(auth).toString('base64')}`
-            },
-            body: data
-        })
-        .then(res => res.json())
-        .then(json => {
-            return json.access_token;
-        });
-}
+// Error handling middleware
+app.use((error, req, res, next) => {
+  console.error('Server error:', error);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+  });
+});
 
-app.listen(port, () => {
-    console.log(`Backend is running on port ${port}`);
+// 404 handler
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    error: 'Route not found' 
+  });
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`PayPal server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`PayPal Base URL: ${PAYPAL_BASE_URL}`);
 });
