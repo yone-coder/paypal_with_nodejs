@@ -41,26 +41,26 @@ const generateAccessToken = async () => {
   }
 };
 
-// Create PayPal order - Optimized for guest checkout with JS SDK
+// Create PayPal order - Alternative approach for guest checkout
 app.post('/api/paypal/create-order', async (req, res) => {
   try {
     const { amount, currency = 'USD', description = 'Payment' } = req.body;
 
-    if (!amount || isNaN(parseFloat(amount))) {
+    if (!amount) {
       return res.status(400).json({ 
-        error: 'Valid amount is required' 
+        error: 'Amount is required' 
       });
     }
 
     const accessToken = await generateAccessToken();
 
-    // Simplified order structure for JS SDK integration
+    // Using a simpler order structure that prioritizes guest checkout
     const orderData = {
       intent: 'CAPTURE',
       purchase_units: [{
         amount: {
           currency_code: currency,
-          value: parseFloat(amount).toFixed(2)
+          value: amount.toString()
         },
         description: description
       }]
@@ -77,10 +77,10 @@ app.post('/api/paypal/create-order', async (req, res) => {
       data: JSON.stringify(orderData)
     });
 
-    // Return just the order ID for JS SDK
     res.json({
       id: response.data.id,
-      status: response.data.status
+      status: response.data.status,
+      links: response.data.links
     });
 
   } catch (error) {
