@@ -41,7 +41,7 @@ const generateAccessToken = async () => {
   }
 };
 
-// Create PayPal order - Alternative approach for guest checkout
+// Create PayPal order
 app.post('/api/paypal/create-order', async (req, res) => {
   try {
     const { amount, currency = 'USD', description = 'Payment' } = req.body;
@@ -54,7 +54,6 @@ app.post('/api/paypal/create-order', async (req, res) => {
 
     const accessToken = await generateAccessToken();
 
-    // Using a simpler order structure that prioritizes guest checkout
     const orderData = {
       intent: 'CAPTURE',
       purchase_units: [{
@@ -63,7 +62,21 @@ app.post('/api/paypal/create-order', async (req, res) => {
           value: amount.toString()
         },
         description: description
-      }]
+      }],
+      payment_source: {
+        paypal: {
+          experience_context: {
+            payment_method_preference: 'UNRESTRICTED',
+            brand_name: 'Your Store Name',
+            locale: 'en-US',
+            landing_page: 'GUEST_CHECKOUT',
+            shipping_preference: 'NO_SHIPPING',
+            user_action: 'PAY_NOW',
+            return_url: `${req.protocol}://${req.get('host')}/api/paypal/success`,
+            cancel_url: `${req.protocol}://${req.get('host')}/api/paypal/cancel`
+          }
+        }
+      }
     };
 
     const response = await axios({
