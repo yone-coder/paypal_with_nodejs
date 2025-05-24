@@ -41,42 +41,29 @@ const generateAccessToken = async () => {
   }
 };
 
-// Create PayPal order
+// Create PayPal order - Optimized for guest checkout with JS SDK
 app.post('/api/paypal/create-order', async (req, res) => {
   try {
     const { amount, currency = 'USD', description = 'Payment' } = req.body;
 
-    if (!amount) {
+    if (!amount || isNaN(parseFloat(amount))) {
       return res.status(400).json({ 
-        error: 'Amount is required' 
+        error: 'Valid amount is required' 
       });
     }
 
     const accessToken = await generateAccessToken();
 
+    // Simplified order structure for JS SDK integration
     const orderData = {
       intent: 'CAPTURE',
       purchase_units: [{
         amount: {
           currency_code: currency,
-          value: amount.toString()
+          value: parseFloat(amount).toFixed(2)
         },
         description: description
-      }],
-      payment_source: {
-        paypal: {
-          experience_context: {
-            payment_method_preference: 'UNRESTRICTED',
-            brand_name: 'Your Store Name',
-            locale: 'en-US',
-            landing_page: 'GUEST_CHECKOUT',
-            shipping_preference: 'NO_SHIPPING',
-            user_action: 'PAY_NOW',
-            return_url: `${req.protocol}://${req.get('host')}/api/paypal/success`,
-            cancel_url: `${req.protocol}://${req.get('host')}/api/paypal/cancel`
-          }
-        }
-      }
+      }]
     };
 
     const response = await axios({
@@ -90,10 +77,10 @@ app.post('/api/paypal/create-order', async (req, res) => {
       data: JSON.stringify(orderData)
     });
 
+    // Return just the order ID for JS SDK
     res.json({
       id: response.data.id,
-      status: response.data.status,
-      links: response.data.links
+      status: response.data.status
     });
 
   } catch (error) {
