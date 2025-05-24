@@ -69,7 +69,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
             payment_method_preference: 'UNRESTRICTED',
             brand_name: 'Your Store Name',
             locale: 'en-US',
-            landing_page: 'LOGIN',
+            landing_page: 'GUEST_CHECKOUT',
             shipping_preference: 'NO_SHIPPING',
             user_action: 'PAY_NOW',
             return_url: `${req.protocol}://${req.get('host')}/api/paypal/success`,
