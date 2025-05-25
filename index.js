@@ -66,7 +66,8 @@ app.post('/api/paypal/create-order', async (req, res) => {
       payment_source: {
         paypal: {
           experience_context: {
-            payment_method_preference: 'UNRESTRICTED',
+            payment_method_preference: 'IMMEDIATE_PAYMENT_REQUIRED',
+            payment_method_selected: 'PAYPAL',
             brand_name: 'Your Store Name',
             locale: 'en-US',
             landing_page: 'GUEST_CHECKOUT',
@@ -100,6 +101,71 @@ app.post('/api/paypal/create-order', async (req, res) => {
     console.error('Error creating PayPal order:', error.response?.data || error.message);
     res.status(500).json({ 
       error: 'Failed to create PayPal order',
+      details: error.response?.data || error.message
+    });
+  }
+});
+
+// Alternative: Create order for direct card payment (Advanced Card Processing)
+app.post('/api/paypal/create-card-order', async (req, res) => {
+  try {
+    const { amount, currency = 'USD', description = 'Payment' } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({ 
+        error: 'Amount is required' 
+      });
+    }
+
+    const accessToken = await generateAccessToken();
+
+    // This configuration forces card-only payment
+    const orderData = {
+      intent: 'CAPTURE',
+      purchase_units: [{
+        amount: {
+          currency_code: currency,
+          value: amount.toString()
+        },
+        description: description
+      }],
+      payment_source: {
+        card: {
+          experience_context: {
+            payment_method_preference: 'IMMEDIATE_PAYMENT_REQUIRED',
+            brand_name: 'Your Store Name',
+            locale: 'en-US',
+            landing_page: 'GUEST_CHECKOUT',
+            shipping_preference: 'NO_SHIPPING',
+            user_action: 'PAY_NOW',
+            return_url: `${req.protocol}://${req.get('host')}/api/paypal/success`,
+            cancel_url: `${req.protocol}://${req.get('host')}/api/paypal/cancel`
+          }
+        }
+      }
+    };
+
+    const response = await axios({
+      method: 'POST',
+      url: `${PAYPAL_BASE_URL}/v2/checkout/orders`,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'Prefer': 'return=representation'
+      },
+      data: JSON.stringify(orderData)
+    });
+
+    res.json({
+      id: response.data.id,
+      status: response.data.status,
+      links: response.data.links
+    });
+
+  } catch (error) {
+    console.error('Error creating PayPal card order:', error.response?.data || error.message);
+    res.status(500).json({ 
+      error: 'Failed to create PayPal card order',
       details: error.response?.data || error.message
     });
   }
@@ -235,4 +301,3 @@ app.listen(PORT, () => {
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`PayPal Base URL: ${PAYPAL_BASE_URL}`);
 });
-
