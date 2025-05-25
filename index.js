@@ -7,18 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3001', 
-    'http://localhost:5173',
-    process.env.FRONTEND_URL,
-    /\.render\.com$/,
-    /\.vercel\.app$/,
-    /\.netlify\.app$/
-  ],
-  credentials: true
-}));
+app.use(cors());
 app.use(express.json());
 
 // PayPal configuration
@@ -32,7 +21,7 @@ const PAYPAL_BASE_URL = process.env.NODE_ENV === 'production'
 const generateAccessToken = async () => {
   try {
     const auth = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
-    
+
     const response = await axios({
       method: 'POST',
       url: `${PAYPAL_BASE_URL}/v1/oauth2/token`,
@@ -52,15 +41,7 @@ const generateAccessToken = async () => {
   }
 };
 
-// Get PayPal client ID for frontend
-app.get('/api/paypal/config', (req, res) => {
-  res.json({
-    clientId: PAYPAL_CLIENT_ID,
-    environment: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox'
-  });
-});
-
-// Create PayPal order (for JavaScript SDK integration)
+// Create PayPal order
 app.post('/api/paypal/create-order', async (req, res) => {
   try {
     const { amount, currency = 'USD', description = 'Payment' } = req.body;
@@ -73,7 +54,6 @@ app.post('/api/paypal/create-order', async (req, res) => {
 
     const accessToken = await generateAccessToken();
 
-    // Simplified order data for JavaScript SDK - no redirect URLs needed
     const orderData = {
       intent: 'CAPTURE',
       purchase_units: [{
@@ -82,7 +62,21 @@ app.post('/api/paypal/create-order', async (req, res) => {
           value: amount.toString()
         },
         description: description
-      }]
+      }],
+      payment_source: {
+        paypal: {
+          experience_context: {
+            payment_method_preference: 'UNRESTRICTED',
+            brand_name: 'Your Store Name',
+            locale: 'en-US',
+            landing_page: 'GUEST_CHECKOUT',
+            shipping_preference: 'NO_SHIPPING',
+            user_action: 'PAY_NOW',
+            return_url: `${req.protocol}://${req.get('host')}/api/paypal/success`,
+            cancel_url: `${req.protocol}://${req.get('host')}/api/paypal/cancel`
+          }
+        }
+      }
     };
 
     const response = await axios({
@@ -96,9 +90,10 @@ app.post('/api/paypal/create-order', async (req, res) => {
       data: JSON.stringify(orderData)
     });
 
-    // Return just the order ID for the JavaScript SDK
     res.json({
-      id: response.data.id
+      id: response.data.id,
+      status: response.data.status,
+      links: response.data.links
     });
 
   } catch (error) {
@@ -139,7 +134,7 @@ app.post('/api/paypal/capture-order/:orderID', async (req, res) => {
     if (captureData.status === 'COMPLETED') {
       // Here you can add your business logic
       // e.g., save order to database, send confirmation email, etc.
-      
+
       console.log('Payment successful:', {
         orderID: captureData.id,
         payerEmail: captureData.payer?.email_address,
@@ -201,14 +196,12 @@ app.get('/api/paypal/order/:orderID', async (req, res) => {
 // Success redirect handler
 app.get('/api/paypal/success', (req, res) => {
   const { token } = req.query;
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  res.redirect(`${frontendUrl}/payment-success?token=${token}`);
+  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-success?token=${token}`);
 });
 
 // Cancel redirect handler
 app.get('/api/paypal/cancel', (req, res) => {
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  res.redirect(`${frontendUrl}/payment-cancelled`);
+  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-cancelled`);
 });
 
 // Health check endpoint
@@ -242,3 +235,4 @@ app.listen(PORT, () => {
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`PayPal Base URL: ${PAYPAL_BASE_URL}`);
 });
+
