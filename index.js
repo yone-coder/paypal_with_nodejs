@@ -7,7 +7,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3001', 
+    'http://localhost:5173',
+    process.env.FRONTEND_URL,
+    /\.render\.com$/,
+    /\.vercel\.app$/,
+    /\.netlify\.app$/
+  ],
+  credentials: true
+}));
 app.use(express.json());
 
 // PayPal configuration
@@ -41,7 +52,15 @@ const generateAccessToken = async () => {
   }
 };
 
-// Create PayPal order
+// Get PayPal client ID for frontend
+app.get('/api/paypal/config', (req, res) => {
+  res.json({
+    clientId: PAYPAL_CLIENT_ID,
+    environment: process.env.NODE_ENV === 'production' ? 'production' : 'sandbox'
+  });
+});
+
+// Create PayPal order (for JavaScript SDK integration)
 app.post('/api/paypal/create-order', async (req, res) => {
   try {
     const { amount, currency = 'USD', description = 'Payment' } = req.body;
@@ -54,6 +73,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
 
     const accessToken = await generateAccessToken();
 
+    // Simplified order data for JavaScript SDK - no redirect URLs needed
     const orderData = {
       intent: 'CAPTURE',
       purchase_units: [{
@@ -62,20 +82,7 @@ app.post('/api/paypal/create-order', async (req, res) => {
           value: amount.toString()
         },
         description: description
-      }],
-      application_context: {
-        brand_name: 'Your Store Name',
-        locale: 'en-US',
-        landing_page: 'NO_PREFERENCE',
-        shipping_preference: 'NO_SHIPPING',
-        user_action: 'PAY_NOW',
-        payment_method: {
-          payer_selected: 'PAYPAL',
-          payee_preferred: 'UNRESTRICTED'
-        },
-        return_url: `${req.protocol}://${req.get('host')}/api/paypal/success`,
-        cancel_url: `${req.protocol}://${req.get('host')}/api/paypal/cancel`
-      }
+      }]
     };
 
     const response = await axios({
@@ -89,10 +96,9 @@ app.post('/api/paypal/create-order', async (req, res) => {
       data: JSON.stringify(orderData)
     });
 
+    // Return just the order ID for the JavaScript SDK
     res.json({
-      id: response.data.id,
-      status: response.data.status,
-      links: response.data.links
+      id: response.data.id
     });
 
   } catch (error) {
@@ -195,12 +201,14 @@ app.get('/api/paypal/order/:orderID', async (req, res) => {
 // Success redirect handler
 app.get('/api/paypal/success', (req, res) => {
   const { token } = req.query;
-  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-success?token=${token}`);
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  res.redirect(`${frontendUrl}/payment-success?token=${token}`);
 });
 
 // Cancel redirect handler
 app.get('/api/paypal/cancel', (req, res) => {
-  res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment-cancelled`);
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  res.redirect(`${frontendUrl}/payment-cancelled`);
 });
 
 // Health check endpoint
