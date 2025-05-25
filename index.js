@@ -63,19 +63,18 @@ app.post('/api/paypal/create-order', async (req, res) => {
         },
         description: description
       }],
-      payment_source: {
-        paypal: {
-          experience_context: {
-            payment_method_preference: 'UNRESTRICTED',
-            brand_name: 'Your Store Name',
-            locale: 'en-US',
-            landing_page: 'GUEST_CHECKOUT',
-            shipping_preference: 'NO_SHIPPING',
-            user_action: 'PAY_NOW',
-            return_url: `${req.protocol}://${req.get('host')}/api/paypal/success`,
-            cancel_url: `${req.protocol}://${req.get('host')}/api/paypal/cancel`
-          }
-        }
+      application_context: {
+        brand_name: 'Your Store Name',
+        locale: 'en-US',
+        landing_page: 'NO_PREFERENCE',
+        shipping_preference: 'NO_SHIPPING',
+        user_action: 'PAY_NOW',
+        payment_method: {
+          payer_selected: 'PAYPAL',
+          payee_preferred: 'UNRESTRICTED'
+        },
+        return_url: `${req.protocol}://${req.get('host')}/api/paypal/success`,
+        cancel_url: `${req.protocol}://${req.get('host')}/api/paypal/cancel`
       }
     };
 
