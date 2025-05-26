@@ -1,35 +1,21 @@
 {
-  "name": "paypal-payment-server",
+  "name": "paypal-hosted-fields-server",
   "version": "1.0.0",
-  "description": "Node.js PayPal payment processing server with REST API for guest payments",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
-  "keywords": [
-    "paypal",
-    "payment",
-    "nodejs",
-    "express",
-    "api",
-    "checkout"
-  ],
-  "author": "Your Name",
-  "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
+    "@paypal/checkout-server-sdk": "^1.0.3",
     "cors": "^2.8.5",
-    "axios": "^1.6.2",
-    "dotenv": "^16.3.1",
-    "@paypal/checkout-server-sdk": "^1.0.3"
+    "dotenv": "^16.1.4",
+    "express": "^4.18.2"
   },
   "devDependencies": {
-    "nodemon": "^3.0.2"
+    "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=16.0.0",
-    "npm": ">=8.0.0"
+    "node": ">=18.0.0"
   }
 }
