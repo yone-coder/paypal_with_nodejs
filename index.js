@@ -1,36 +1,60 @@
-// server.js - Example Node.js backend for Render.com
+// server.js - Express server with PayPal integration
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const paypal = require('@paypal/checkout-server-sdk');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Render.com specific CORS setup
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'https://your-frontend-app.netlify.app', // Replace with your frontend URL
+    'https://your-frontend-app.vercel.app',
+    // Add other domains as needed
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
-// PayPal SDK setup
-const paypal = require('@paypal/checkout-server-sdk');
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV 
+  });
+});
 
-// PayPal environment setup
-function environment() {
-  const clientId = process.env.PAYPAL_CLIENT_ID;
-  const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'PayPal Hosted Fields Server',
+    version: '1.0.0',
+    status: 'running'
+  });
+});
 
-  return process.env.NODE_ENV === 'production'
-    ? new paypal.core.LiveEnvironment(clientId, clientSecret)
-    : new paypal.core.SandboxEnvironment(clientId, clientSecret);
-}
+// PayPal environment configuration
+const Environment = process.env.NODE_ENV === 'production' 
+  ? paypal.core.LiveEnvironment 
+  : paypal.core.SandboxEnvironment;
 
-const client = new paypal.core.PayPalHttpClient(environment());
-
-// Routes
+const paypalClient = new paypal.core.PayPalHttpClient(
+  new Environment(
+    process.env.PAYPAL_CLIENT_ID,
+    process.env.PAYPAL_CLIENT_SECRET
+  )
+);
 
 // Create order endpoint
-app.post('/api/orders', async (req, res) => {
+app.post('/api/paypal/create-order', async (req, res) => {
   try {
     const { amount, currency = 'USD' } = req.body;
-    
+
     const request = new paypal.orders.OrdersCreateRequest();
     request.prefer("return=representation");
     request.requestBody({
@@ -43,50 +67,94 @@ app.post('/api/orders', async (req, res) => {
       }]
     });
 
-    const order = await client.execute(request);
-    res.json({ id: order.result.id });
-  } catch (error) {
-    console.error('Error creating order:', error);
-    res.status(500).json({ error: 'Failed to create order' });
-  }
-});
-
-// Capture order endpoint
-app.post('/api/orders/:orderID/capture', async (req, res) => {
-  try {
-    const orderID = req.params.orderID;
-    const request = new paypal.orders.OrdersCaptureRequest(orderID);
-    request.requestBody({});
-
-    const capture = await client.execute(request);
+    const order = await paypalClient.execute(request);
     
-    // Here you can save the order to your database
-    // const order = await saveOrderToDatabase(capture.result);
-    
-    res.json({ 
-      success: true, 
-      orderID: capture.result.id,
-      status: capture.result.status 
+    res.json({
+      id: order.result.id
     });
   } catch (error) {
-    console.error('Error capturing order:', error);
-    res.status(500).json({ error: 'Failed to capture order' });
+    console.error('Error creating order:', error);
+    res.status(500).json({
+      error: 'Failed to create order'
+    });
   }
 });
 
-// Webhook endpoint for PayPal notifications
-app.post('/api/webhooks/paypal', (req, res) => {
-  // Handle PayPal webhooks here
-  console.log('PayPal webhook received:', req.body);
-  res.status(200).send('OK');
+// Process payment with hosted fields
+app.post('/api/paypal/process-payment', async (req, res) => {
+  try {
+    const { nonce, amount, currency = 'USD' } = req.body;
+
+    // Create order first
+    const createRequest = new paypal.orders.OrdersCreateRequest();
+    createRequest.prefer("return=representation");
+    createRequest.requestBody({
+      intent: 'CAPTURE',
+      purchase_units: [{
+        amount: {
+          currency_code: currency,
+          value: amount
+        }
+      }],
+      payment_source: {
+        card: {
+          single_use_token: nonce
+        }
+      }
+    });
+
+    const order = await paypalClient.execute(createRequest);
+
+    // Capture the order
+    const captureRequest = new paypal.orders.OrdersCaptureRequest(order.result.id);
+    captureRequest.requestBody({});
+    
+    const capture = await paypalClient.execute(captureRequest);
+
+    if (capture.result.status === 'COMPLETED') {
+      res.json({
+        success: true,
+        transactionId: capture.result.id,
+        status: capture.result.status
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: 'Payment not completed'
+      });
+    }
+  } catch (error) {
+    console.error('Error processing payment:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Payment processing failed'
+    });
+  }
 });
 
-// Health check for Render.com
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+// Get order details
+app.get('/api/paypal/orders/:orderId', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    
+    const request = new paypal.orders.OrdersGetRequest(orderId);
+    const order = await paypalClient.execute(request);
+    
+    res.json(order.result);
+  } catch (error) {
+    console.error('Error getting order:', error);
+    res.status(500).json({
+      error: 'Failed to get order details'
+    });
+  }
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV}`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
 });
+
+// Export for testing
+module.exports = app;
