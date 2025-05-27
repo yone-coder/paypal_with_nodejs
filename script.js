@@ -27,7 +27,7 @@ const is_user_logged_in = () => {
 const get_client_token = () => {
   return new Promise(async (resolve, reject) => {
     try {
-      const response = await fetch("http://localhost:3000/get_client_token", {
+      const response = await fetch("/get_client_token", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ "customer_id": current_customer_id }),
       });
@@ -39,6 +39,7 @@ const get_client_token = () => {
     }
   });
 }
+
 let handle_close = (event) => {
     event.target.closest(".ms-alert").remove();
 }
@@ -48,6 +49,7 @@ let handle_click = (event) => {
     }
 }
 document.addEventListener("click", handle_click);
+
 const paypal_sdk_url = "https://www.paypal.com/sdk/js";
 const client_id = "AU23YbLMTqxG3iSvnhcWtix6rGN14uw3axYJgrDe8VqUVng8XiQmmeiaxJWbnpbZP_f4";
 const currency = "USD";
@@ -56,13 +58,14 @@ const intent = "capture";
 let display_error_alert = () => {
     document.getElementById("alerts").innerHTML = `<div class="ms-alert ms-action2 ms-small"><span class="ms-close"></span><p>An Error Ocurred! (View console for more info)</p>  </div>`;
 }
+
 let display_success_message = (object) => {
     order_details = object.order_details;
     paypal_buttons = object.paypal_buttons;
-    console.log(order_details); //https://developer.paypal.com/docs/api/orders/v2/#orders_capture!c=201&path=create_time&t=response
+    console.log(order_details);
     let intent_object = intent === "authorize" ? "authorizations" : "captures";
     //Custom Successful Message
-    document.getElementById("alerts").innerHTML = `<div class=\'ms-alert ms-action\'>Thank you ` + (order_details?.payer?.name?.given_name || ``) + ` ` + (order_details?.payer?.name?.surname || ``) + ` for your payment of ` + order_details.purchase_units[0].payments[intent_object][0].amount.value + ` ` + order_details.purchase_units[0].payments[intent_object][0].amount.currency_code + `!</div>`;
+    document.getElementById("alerts").innerHTML = `<div class='ms-alert ms-action'>Thank you ` + (order_details?.payer?.name?.given_name || ``) + ` ` + (order_details?.payer?.name?.surname || ``) + ` for your payment of ` + order_details.purchase_units[0].payments[intent_object][0].amount.value + ` ` + order_details.purchase_units[0].payments[intent_object][0].amount.currency_code + `!</div>`;
 
     //Close out the PayPal buttons that were rendered
     paypal_buttons.close();
@@ -75,26 +78,25 @@ is_user_logged_in()
     return get_client_token();
 })
 .then((client_token) => {
-    //https://developer.paypal.com/sdk/js/configuration/#link-queryparameters
-    return script_to_head({"src": paypal_sdk_url + "?client-id=" + client_id + "&enable-funding=venmo&currency=" + currency + "&intent=" + intent + "&components=buttons,hosted-fields", "data-client-token": client_token}) //https://developer.paypal.com/sdk/js/configuration/#link-configureandcustomizeyourintegration
+    return script_to_head({"src": paypal_sdk_url + "?client-id=" + client_id + "&enable-funding=venmo&currency=" + currency + "&intent=" + intent + "&components=buttons,hosted-fields", "data-client-token": client_token})
 })
 .then(() => {
     //Handle loading spinner
     document.getElementById("loading").classList.add("hide");
     document.getElementById("content").classList.remove("hide");
-    let paypal_buttons = paypal.Buttons({ // https://developer.paypal.com/sdk/js/reference
-        onClick: (data) => { // https://developer.paypal.com/sdk/js/reference/#link-oninitonclick
+    let paypal_buttons = paypal.Buttons({
+        onClick: (data) => {
             //Custom JS here
         },
-        style: { //https://developer.paypal.com/sdk/js/reference/#link-style
+        style: {
             shape: 'rect',
             color: 'gold',
             layout: 'vertical',
             label: 'paypal'
         },
 
-        createOrder: function(data, actions) { //https://developer.paypal.com/docs/api/orders/v2/#orders_create
-            return fetch("http://localhost:3000/create_order", {
+        createOrder: function(data, actions) {
+            return fetch("/create_order", {
                 method: "post", headers: { "Content-Type": "application/json; charset=utf-8" },
                 body: JSON.stringify({ "intent": intent })
             })
@@ -105,7 +107,7 @@ is_user_logged_in()
         onApprove: function(data, actions) {
             order_id = data.orderID;
             console.log(data);
-            return fetch("http://localhost:3000/complete_order", {
+            return fetch("/complete_order", {
                 method: "post", headers: { "Content-Type": "application/json; charset=utf-8" },
                 body: JSON.stringify({
                     "intent": intent,
@@ -131,13 +133,12 @@ is_user_logged_in()
         }
     });
     paypal_buttons.render('#payment_options');
+    
     //Hosted Fields
     if (paypal.HostedFields.isEligible()) {
-        // Renders card fields
         paypal_hosted_fields = paypal.HostedFields.render({
-          // Call your server to set up the transaction
           createOrder: () => {
-            return fetch("http://localhost:3000/create_order", {
+            return fetch("/create_order", {
                 method: "post", headers: { "Content-Type": "application/json; charset=utf-8" },
                 body: JSON.stringify({ "intent": intent })
             })
@@ -176,34 +177,19 @@ is_user_logged_in()
             document.querySelector("#card-form").querySelector("input[type='submit']").setAttribute("disabled", "");
             document.querySelector("#card-form").querySelector("input[type='submit']").value = "Loading...";
             card_fields
-              .submit(
-                //Customer Data BEGIN
-                //This wasn't part of the video guide originally, but I've included it here
-                //So you can reference how you could send customer data, which may
-                //be a requirement of your project to pass this info to card issuers
-                {
-                  // Cardholder's first and last name
-                  cardholderName: "Raúl Uriarte, Jr.",
-                  // Billing Address
-                  billingAddress: {
-                    // Street address, line 1
-                    streetAddress: "123 Springfield Rd",
-                    // Street address, line 2 (Ex: Unit, Apartment, etc.)
-                    extendedAddress: "",
-                    // State
-                    region: "AZ",
-                    // City
-                    locality: "CHANDLER",
-                    // Postal Code
-                    postalCode: "85224",
-                    // Country Code
-                    countryCodeAlpha2: "US",
-                  },
-                }
-                //Customer Data END
-              )
+              .submit({
+                cardholderName: "Raúl Uriarte, Jr.",
+                billingAddress: {
+                  streetAddress: "123 Springfield Rd",
+                  extendedAddress: "",
+                  region: "AZ",
+                  locality: "CHANDLER",
+                  postalCode: "85224",
+                  countryCodeAlpha2: "US",
+                },
+              })
               .then(() => {
-                return fetch("http://localhost:3000/complete_order", {
+                return fetch("/complete_order", {
                     method: "post", headers: { "Content-Type": "application/json; charset=utf-8" },
                     body: JSON.stringify({
                         "intent": intent,
