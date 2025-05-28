@@ -9,7 +9,11 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: ['https://preview--vivid-verse-voyage-05u-51-95-17.lovable.app'], // Add your Netlify URL
+  origin: [
+    'https://preview--vivid-verse-voyage-05u-51-95-17.lovable.app',
+    'https://www.paypal.com',
+    'https://www.sandbox.paypal.com'
+  ],
   credentials: true
 }));
 app.use(express.json());
